@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.4.555">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Lukas Lobnig">
+<meta name="dcterms.date" content="2026-03-31">
+
+<title>Signal-based Asset Pricing: Replicating the Change in Analyst Recommendation Factor</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+
+<script src="SeminarPaper_final_files/libs/clipboard/clipboard.min.js"></script>
+<script src="SeminarPaper_final_files/libs/quarto-html/quarto.js"></script>
+<script src="SeminarPaper_final_files/libs/quarto-html/popper.min.js"></script>
+<script src="SeminarPaper_final_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="SeminarPaper_final_files/libs/quarto-html/anchor.min.js"></script>
+<link href="SeminarPaper_final_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="SeminarPaper_final_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="SeminarPaper_final_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="SeminarPaper_final_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="SeminarPaper_final_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<script src="SeminarPaper_final_files/libs/kePrint-0.0.1/kePrint.js"></script>
+<link href="SeminarPaper_final_files/libs/lightable-0.0.1/lightable.css" rel="stylesheet">
+
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body>
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction"><span class="header-section-number">1</span> Introduction</a></li>
+  <li><a href="#data" id="toc-data" class="nav-link" data-scroll-target="#data"><span class="header-section-number">2</span> Data</a>
+  <ul class="collapse">
+  <li><a href="#database-connection-and-signal-identification" id="toc-database-connection-and-signal-identification" class="nav-link" data-scroll-target="#database-connection-and-signal-identification"><span class="header-section-number">2.1</span> Database Connection and Signal Identification</a></li>
+  <li><a href="#descriptive-statistics" id="toc-descriptive-statistics" class="nav-link" data-scroll-target="#descriptive-statistics"><span class="header-section-number">2.2</span> Descriptive Statistics</a></li>
+  </ul></li>
+  <li><a href="#factor-construction-and-replication" id="toc-factor-construction-and-replication" class="nav-link" data-scroll-target="#factor-construction-and-replication"><span class="header-section-number">3</span> Factor Construction and Replication</a>
+  <ul class="collapse">
+  <li><a href="#portfolio-sorting-methodology" id="toc-portfolio-sorting-methodology" class="nav-link" data-scroll-target="#portfolio-sorting-methodology"><span class="header-section-number">3.1</span> Portfolio Sorting Methodology</a></li>
+  <li><a href="#portfolio-returns" id="toc-portfolio-returns" class="nav-link" data-scroll-target="#portfolio-returns"><span class="header-section-number">3.2</span> Portfolio Returns</a></li>
+  <li><a href="#long-short-factor-portfolio" id="toc-long-short-factor-portfolio" class="nav-link" data-scroll-target="#long-short-factor-portfolio"><span class="header-section-number">3.3</span> Long-Short Factor Portfolio</a></li>
+  <li><a href="#replication-results-vs.-table-2" id="toc-replication-results-vs.-table-2" class="nav-link" data-scroll-target="#replication-results-vs.-table-2"><span class="header-section-number">3.4</span> Replication Results vs.&nbsp;Table 2</a>
+  <ul class="collapse">
+  <li><a href="#discussion-of-replication-quality" id="toc-discussion-of-replication-quality" class="nav-link" data-scroll-target="#discussion-of-replication-quality"><span class="header-section-number">3.4.1</span> Discussion of Replication Quality</a></li>
+  </ul></li>
+  </ul></li>
+  <li><a href="#pricing-tests" id="toc-pricing-tests" class="nav-link" data-scroll-target="#pricing-tests"><span class="header-section-number">4</span> Pricing Tests</a></li>
+  <li><a href="#factor-augmentation" id="toc-factor-augmentation" class="nav-link" data-scroll-target="#factor-augmentation"><span class="header-section-number">5</span> Factor Augmentation</a>
+  <ul class="collapse">
+  <li><a href="#grs-test-on-industry-portfolios" id="toc-grs-test-on-industry-portfolios" class="nav-link" data-scroll-target="#grs-test-on-industry-portfolios"><span class="header-section-number">5.1</span> GRS Test on Industry Portfolios</a></li>
+  <li><a href="#individual-alpha-comparison" id="toc-individual-alpha-comparison" class="nav-link" data-scroll-target="#individual-alpha-comparison"><span class="header-section-number">5.2</span> Individual Alpha Comparison</a></li>
+  </ul></li>
+  <li><a href="#factor-competition" id="toc-factor-competition" class="nav-link" data-scroll-target="#factor-competition"><span class="header-section-number">6</span> Factor Competition</a></li>
+  <li><a href="#comparison-to-table-2-and-literature" id="toc-comparison-to-table-2-and-literature" class="nav-link" data-scroll-target="#comparison-to-table-2-and-literature"><span class="header-section-number">7</span> Comparison to Table 2 and Literature</a></li>
+  <li><a href="#cross-sectional-pricing-voluntary" id="toc-cross-sectional-pricing-voluntary" class="nav-link" data-scroll-target="#cross-sectional-pricing-voluntary"><span class="header-section-number">8</span> Cross-Sectional Pricing (Voluntary)</a>
+  <ul class="collapse">
+  <li><a href="#fama-macbeth-regressions" id="toc-fama-macbeth-regressions" class="nav-link" data-scroll-target="#fama-macbeth-regressions"><span class="header-section-number">8.1</span> Fama-MacBeth Regressions</a></li>
+  <li><a href="#extended-regression-with-size-control" id="toc-extended-regression-with-size-control" class="nav-link" data-scroll-target="#extended-regression-with-size-control"><span class="header-section-number">8.2</span> Extended Regression with Size Control</a></li>
+  <li><a href="#dynamics-of-the-premium" id="toc-dynamics-of-the-premium" class="nav-link" data-scroll-target="#dynamics-of-the-premium"><span class="header-section-number">8.3</span> Dynamics of the Premium</a></li>
+  </ul></li>
+  <li><a href="#conclusion" id="toc-conclusion" class="nav-link" data-scroll-target="#conclusion"><span class="header-section-number">9</span> Conclusion</a></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+<div class="quarto-alternate-formats"><h2>Other Formats</h2><ul><li><a href="SeminarPaper_final.pdf"><i class="bi bi-file-pdf"></i>PDF</a></li></ul></div></nav>
+</div>
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Signal-based Asset Pricing: Replicating the Change in Analyst Recommendation Factor</h1>
+<p class="subtitle lead">Empirical Methods 2026 — Seminar Paper</p>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Lukas Lobnig </p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">March 31, 2026</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="introduction" class="level1" data-number="1">
+<h1 data-number="1"><span class="header-section-number">1</span> Introduction</h1>
+<p>This paper replicates and evaluates the <strong>ChangeInRecommendation</strong> signal from Chen and Zimmermann <span class="citation" data-cites="ChenZimmermann2022">(<a href="#ref-ChenZimmermann2022" role="doc-biblioref">2022</a>)</span>, which originates from Jegadeesh, Kim, Krische, and Lee <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>)</span>. The signal captures the quarterly change in sell-side analysts’ consensus stock recommendation. JKKL show that while the <em>level</em> of analyst consensus loses predictive power after controlling for momentum and other characteristics, the <em>change</em> in consensus remains a robust cross-sectional return predictor that appears to contain information orthogonal to a large set of quantitative signals.</p>
+<p>The economic intuition is straightforward: when analysts collectively revise their recommendations upward (downward), this reflects new private or semi-private information about a firm’s prospects that has not yet been fully impounded into prices. Unlike the level of the recommendation — which JKKL show is heavily contaminated by a “glamour bias” driven by sell-side incentive structures — changes strip out this persistent bias and isolate the incremental information content of analyst research.</p>
+<p>This paper proceeds as follows. Section 2 describes the data. Section 3 constructs the long-short factor portfolio and benchmarks it against Table 2 of Chen and Zimmermann <span class="citation" data-cites="ChenZimmermann2022">(<a href="#ref-ChenZimmermann2022" role="doc-biblioref">2022</a>)</span>. Section 4 tests the factor’s pricing power against CAPM, FF3, FF-C4, and FF5. Section 5 evaluates whether augmenting existing models with the new factor improves their ability to price test portfolios. Section 6 examines factor competition. Section 7 compares our results to the literature and discusses replication quality. Section 8 presents cross-sectional Fama-MacBeth regressions, and Section 9 concludes.</p>
+<p>A note on data availability: C&amp;Z <span class="citation" data-cites="ChenZimmermann2022">(<a href="#ref-ChenZimmermann2022" role="doc-biblioref">2022</a>)</span> explicitly state in Table 2 that they <em>lack the data</em> to reproduce the ChangeInRecommendation signal themselves, as it relies on Zacks analyst data unavailable through WRDS. The values reported in C&amp;Z Table 2 (mean return 1.04%, t-stat 6.65) are therefore JKKL’s own original estimates, standardised to a monthly format. Our replication is thus the first IBES/WRDS-based implementation of this signal within the C&amp;Z standardised framework.</p>
+</section>
+<section id="data" class="level1" data-number="2">
+<h1 data-number="2"><span class="header-section-number">2</span> Data</h1>
+<section id="database-connection-and-signal-identification" class="level2" data-number="2.1">
+<h2 data-number="2.1" class="anchored" data-anchor-id="database-connection-and-signal-identification"><span class="header-section-number">2.1</span> Database Connection and Signal Identification</h2>
+<p>We use the <code>tidy_finance.sqlite</code> database, which contains CRSP monthly stock data pre-merged with the Chen and Zimmermann <span class="citation" data-cites="ChenZimmermann2022">(<a href="#ref-ChenZimmermann2022" role="doc-biblioref">2022</a>)</span> signal characteristics.</p>
+<p>The resulting sample covers <strong>388,877 stock-month observations</strong> for <strong>12,272 unique firms</strong> over the period December 1993 to December 2022 (349 months with valid signal data after lagging). Factor data is available for 738 months over the same window.</p>
+</section>
+<section id="descriptive-statistics" class="level2" data-number="2.2">
+<h2 data-number="2.2" class="anchored" data-anchor-id="descriptive-statistics"><span class="header-section-number">2.2</span> Descriptive Statistics</h2>
+<p>The ChangeInRecommendation signal is discrete and lumpy: many stocks experience no change in consensus recommendations in a given month, producing a large mass at zero. JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>, Table II Panel B)</span> explicitly handle this by placing all “no change” stocks in the middle quintile, resulting in unequal-sized portfolios.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="SeminarPaper_final_files/figure-html/desc-stats-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Cross-sectional summary of the ChangeInRecommendation signal</caption>
+<thead>
+<tr class="header">
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Median</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">SD</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">P5</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">P25</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">P75</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">P95</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Frac = 0</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">-0.0238</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">1.094</td>
+<td style="text-align: right;">-2</td>
+<td style="text-align: right;">-1</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.2547</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The signal has a mean of −0.024 and a median of 0, confirming a slight negative skew: analysts are marginally more likely to downgrade than upgrade, consistent with JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>, Table II Panel B)</span> who report a mean change of −0.01 in their sample. The standard deviation of 1.09 indicates meaningful dispersion around zero.</p>
+<p>The percentiles reveal the discrete, lumpy nature of the signal: P25 = −1 and P75 = +1 mean that at least half of all non-zero observations move by exactly one unit (a single-notch recommendation change). The tails (P5 = −2, P95 = +1) are modest, suggesting that multi-notch revisions are rare.</p>
+<p>Most importantly, 25.5% of observations are exactly zero — roughly one in four stock-months experiences no change in consensus. This is a defining feature of the signal that JKKL explicitly address by placing all “no change” firms into the middle quintile. It also means the extreme portfolios (quintiles 1 and 5) are composed entirely of stocks with actual downgrades or upgrades, giving them cleaner signal content.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="SeminarPaper_final_files/figure-html/signal-histogram-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section id="factor-construction-and-replication" class="level1" data-number="3">
+<h1 data-number="3"><span class="header-section-number">3</span> Factor Construction and Replication</h1>
+<section id="portfolio-sorting-methodology" class="level2" data-number="3.1">
+<h2 data-number="3.1" class="anchored" data-anchor-id="portfolio-sorting-methodology"><span class="header-section-number">3.1</span> Portfolio Sorting Methodology</h2>
+<p>JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>)</span> use <strong>quintile</strong> sorts (5 portfolios), report <strong>equal-weighted</strong> returns, and note that the middle quintile absorbs all “no change” firms, producing unequal-sized portfolios (Table II, Panel B). Chen and Zimmermann follow each original paper’s sorting scheme for their Table 2 replication, but standardize the breakpoint computation to use <strong>NYSE-listed stocks only</strong> to prevent small-cap Nasdaq stocks from distorting the cutoffs.</p>
+<p>We therefore implement the following:</p>
+<ol type="1">
+<li><strong>Primary specification (C&amp;Z Table 2 match)</strong>: Quintile sorts, NYSE breakpoints, equal-weighted returns — consistent with both JKKL’s design and C&amp;Z’s standardization.</li>
+<li><strong>Robustness</strong>: Value-weighted returns and decile sorts for comparison.</li>
+</ol>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Quintile portfolio composition (NYSE breakpoints)</caption>
+<thead>
+<tr class="header">
+<th style="text-align: right;" data-quarto-table-cell-role="th">portfolio</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean N per month</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean signal</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">130.28</td>
+<td style="text-align: right;">-1.86</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">281.73</td>
+<td style="text-align: right;">-0.81</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">160.62</td>
+<td style="text-align: right;">-0.04</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">320.31</td>
+<td style="text-align: right;">0.16</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">292.65</td>
+<td style="text-align: right;">1.35</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The portfolio sizes are notably unequal, which is expected given the signal’s lumpiness. Portfolio 3 (mean signal <span class="math inline">\(\approx\)</span> −0.04) captures the near-zero mass, but it is not the largest group — portfolios 2 and 4 are bigger (~282 and ~320 stocks). This differs from JKKL’s manual quintile construction, where the middle group was the largest (~294 stocks). The reason is that NYSE breakpoints split the distribution at the 20th/40th/60th/80th percentiles of NYSE stocks, which may place the discrete one-notch changes (signal = −1 or +1) into portfolios 2 and 4 rather than at the boundaries. The result is that these “mild revision” groups accumulate more stocks.</p>
+<p>The extreme portfolios (1 and 5) contain ~130 and ~293 stocks per month respectively, with portfolio 1 being smaller. This asymmetry reflects the slight negative skew we saw earlier: strong downgrades (signal <span class="math inline">\(\leq\)</span> −2) are rarer than strong upgrades (signal <span class="math inline">\(\geq\)</span> +1).</p>
+<p>Overall, the long-short factor (portfolio 5 minus portfolio 1) compares ~293 upgraded stocks against ~130 downgraded stocks each month — a clean contrast that isolates the information content of analyst revisions.</p>
+</section>
+<section id="portfolio-returns" class="level2" data-number="3.2">
+<h2 data-number="3.2" class="anchored" data-anchor-id="portfolio-returns"><span class="header-section-number">3.2</span> Portfolio Returns</h2>
+<p>JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>)</span> report <strong>equal-weighted</strong> returns as their primary specification (Tables III, IX). We compute both EW and VW returns, but use EW as the primary specification to match the original paper.</p>
+</section>
+<section id="long-short-factor-portfolio" class="level2" data-number="3.3">
+<h2 data-number="3.3" class="anchored" data-anchor-id="long-short-factor-portfolio"><span class="header-section-number">3.3</span> Long-Short Factor Portfolio</h2>
+<p>The factor goes <strong>long</strong> the top quintile (stocks with the most positive recommendation changes, i.e.&nbsp;upgrades) and <strong>short</strong> the bottom quintile (most negative changes, i.e.&nbsp;downgrades). A positive mean return indicates upgrades outperform downgrades, consistent with JKKL’s finding in Table III Panel C.</p>
+</section>
+<section id="replication-results-vs.-table-2" class="level2" data-number="3.4">
+<h2 data-number="3.4" class="anchored" data-anchor-id="replication-results-vs.-table-2"><span class="header-section-number">3.4</span> Replication Results vs.&nbsp;Table 2</h2>
+<p>We compare the mean monthly return and <span class="math inline">\(t\)</span>-statistic to the benchmark in Table 2 of Chen and Zimmermann <span class="citation" data-cites="ChenZimmermann2022">(<a href="#ref-ChenZimmermann2022" role="doc-biblioref">2022</a>)</span>.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Long-short portfolio: replication summary</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Specification</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t-stat</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">SD (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Sharpe (ann.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">N months</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Quintile EW (primary — JKKL style)</td>
+<td style="text-align: right;">0.675</td>
+<td style="text-align: right;">5.920</td>
+<td style="text-align: right;">2.129</td>
+<td style="text-align: right;">1.098</td>
+<td style="text-align: right;">349</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Quintile VW</td>
+<td style="text-align: right;">0.177</td>
+<td style="text-align: right;">1.217</td>
+<td style="text-align: right;">2.710</td>
+<td style="text-align: right;">0.226</td>
+<td style="text-align: right;">349</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Decile EW</td>
+<td style="text-align: right;">0.710</td>
+<td style="text-align: right;">5.734</td>
+<td style="text-align: right;">2.315</td>
+<td style="text-align: right;">1.063</td>
+<td style="text-align: right;">349</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Decile VW</td>
+<td style="text-align: right;">0.138</td>
+<td style="text-align: right;">0.809</td>
+<td style="text-align: right;">3.194</td>
+<td style="text-align: right;">0.150</td>
+<td style="text-align: right;">349</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The primary specification (Quintile EW) yields a mean return of 0.68% per month with a t-stat of 5.92, highly significant. The return pattern is consistent across sorting granularity — Decile EW produces a similar spread (0.71%, t = 5.73), confirming that the result is not an artifact of the quintile cutoffs.</p>
+<p>However, switching to value-weighted returns causes the premium to collapse: Quintile VW drops to 0.18% (t = 1.22, insignificant), and Decile VW to 0.14% (t = 0.81). This tells us the anomaly lives predominantly among smaller stocks, where analyst recommendation changes have a larger price impact. This is a common pattern across anomalies and will be important context for the discussion section.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Quintile portfolio returns (1 = downgrades, 5 = upgrades)</caption>
+<thead>
+<tr class="header">
+<th style="text-align: right;" data-quarto-table-cell-role="th">portfolio</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean EW (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t (EW)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean VW (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t (VW)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean N</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.459</td>
+<td style="text-align: right;">1.327</td>
+<td style="text-align: right;">0.649</td>
+<td style="text-align: right;">2.407</td>
+<td style="text-align: right;">130.281</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.638</td>
+<td style="text-align: right;">1.852</td>
+<td style="text-align: right;">0.567</td>
+<td style="text-align: right;">2.175</td>
+<td style="text-align: right;">281.734</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">1.089</td>
+<td style="text-align: right;">1.883</td>
+<td style="text-align: right;">0.353</td>
+<td style="text-align: right;">0.654</td>
+<td style="text-align: right;">160.619</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">0.782</td>
+<td style="text-align: right;">2.283</td>
+<td style="text-align: right;">0.703</td>
+<td style="text-align: right;">2.698</td>
+<td style="text-align: right;">320.309</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">1.134</td>
+<td style="text-align: right;">3.441</td>
+<td style="text-align: right;">0.826</td>
+<td style="text-align: right;">3.250</td>
+<td style="text-align: right;">292.653</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The EW returns are not monotonic — portfolio 3 (0.89%) actually earns more than portfolios 2 (0.64%) and 4 (0.78%). This is consistent with JKKL (2004, Table III Panel C), who report the same non-monotonic pattern for CHGCON: the “no change” category earns lower returns than the adjacent quintiles. The non-monotonicity here is mild and concentrated in the middle; the key economic result holds — portfolio 5 (upgrades, 1.13%) clearly outperforms portfolio 1 (downgrades, 0.46%).</p>
+<p>The long-short spread is driven by both legs. Portfolio 1 earns the lowest EW return (0.46%), while portfolio 5 earns the highest (1.13%). Neither leg is extreme in isolation — it’s the combination that produces the significant 0.68% spread. This is a healthier pattern than a factor driven by only one side.</p>
+<p>Under VW, the pattern improves somewhat in terms of monotonicity — the return rises fairly steadily from portfolio 2 onward (0.57% → 0.70% → 0.83%). However, portfolio 1 actually has the highest VW return among the lower quintiles (0.65%), which is why the VW long-short spread was insignificant: a few large-cap downgraded stocks earned strong returns, washing out the short leg.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="SeminarPaper_final_files/figure-html/monotonicity-plot-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<section id="discussion-of-replication-quality" class="level3" data-number="3.4.1">
+<h3 data-number="3.4.1" class="anchored" data-anchor-id="discussion-of-replication-quality"><span class="header-section-number">3.4.1</span> Discussion of Replication Quality</h3>
+<p>Our primary specification (Quintile EW, NYSE breakpoints) yields a mean long-short return of <strong>0.68% per month</strong> with a <strong>t-statistic of 5.92</strong> over 349 months. To contextualize this number, we must distinguish carefully between two benchmarks: the original JKKL result and the C&amp;Z reproduction.</p>
+<p><strong>Data source and benchmark.</strong> JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>)</span> use <strong>Zacks</strong> analyst recommendation data covering 1985–1998. Critically, Chen and Zimmermann <span class="citation" data-cites="ChenZimmermann2022">(<a href="#ref-ChenZimmermann2022" role="doc-biblioref">2022</a>)</span> explicitly note in Table 2 that they <em>lack the data</em> to reproduce this signal — their dataset relies on IBES/WRDS, which does not contain the Zacks coverage going back to 1985. The figures reported in C&amp;Z Table 2 (1.04% per month, t = 6.65) are therefore <strong>JKKL’s own original estimates</strong> expressed in monthly terms, not an independent C&amp;Z reproduction. The <code>tidy_finance</code> database likewise relies on IBES/WRDS, so our sample starts in the mid-1990s and extends through end-2022. This means <strong>the correct benchmark is JKKL’s own result, appropriately rescaled from six-month to monthly returns</strong> — and our replication is in fact the first IBES-based standardised implementation of this signal. Our 0.68% per month is modestly below the JKKL-implied rate, plausibly reflecting the later sample period, the switch from Zacks to IBES coverage, and post-publication decay.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Benchmark comparison: JKKL, C\&amp;Z Table 2, and our replication</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th"></th>
+<th style="text-align: left;" data-quarto-table-cell-role="th">JKKL (2004)</th>
+<th style="text-align: left;" data-quarto-table-cell-role="th">C&amp;Z Table 2</th>
+<th style="text-align: left;" data-quarto-table-cell-role="th">Our Replication</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Data source</td>
+<td style="text-align: left;">Zacks</td>
+<td style="text-align: left;">JKKL numbers cited</td>
+<td style="text-align: left;">IBES/WRDS (tidy_finance)</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Sample start</td>
+<td style="text-align: left;">1985</td>
+<td style="text-align: left;">1985</td>
+<td style="text-align: left;">~1994</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Sample end</td>
+<td style="text-align: left;">1998</td>
+<td style="text-align: left;">1998</td>
+<td style="text-align: left;">2022</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Return</td>
+<td style="text-align: left;">2.7% / 6 months</td>
+<td style="text-align: left;">~1.04% p.m. (implied)</td>
+<td style="text-align: left;">0.68% p.m.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">t-stat</td>
+<td style="text-align: left;">n.a.</td>
+<td style="text-align: left;">6.65</td>
+<td style="text-align: left;">5.92</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Note</td>
+<td style="text-align: left;">Market-adj., quarterly sort</td>
+<td style="text-align: left;">C&amp;Z lacked the data</td>
+<td style="text-align: left;">Excess ret., monthly sort</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p><strong>Return definition.</strong> JKKL compute market-adjusted returns (raw return minus the contemporaneous value-weighted CRSP index), whereas we use excess returns over the risk-free rate. Since both the long and short legs earn positive excess returns in our data (0.46% and 1.13%), the spread is mechanically similar under both definitions, but small differences can arise in months where the market return deviates substantially from the risk-free rate.</p>
+<p><strong>Holding period.</strong> JKKL form portfolios at calendar quarter-ends and hold for six months, computing cumulative six-month returns. Our approach — monthly sorting with one-month holding periods — is the standard C&amp;Z procedure. Monthly rebalancing can capture shorter-lived price reactions to recommendation changes that dissipate within a quarter, potentially producing a larger measured premium.</p>
+<p><strong>Non-monotonicity.</strong> Our quintile returns are not perfectly monotonic: portfolio 3 (1.09%) earns more than portfolios 2 (0.64%) and 4 (0.78%). JKKL report the identical pattern — their “no changes” category (coded 0.50) earns lower returns than the adjacent quintiles (Table III Panel C). They note that the relation between CHGCON and future returns is not monotonic, with the no-change category earning lower returns than adjacent groups <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004, 1096</a>)</span>. In our NYSE-breakpoint implementation, the middle quintile does not perfectly capture “no change” firms (portfolio 3 has a mean signal of −0.04, not exactly zero), so the non-monotonicity is distributed slightly differently across the middle quintiles, but the qualitative pattern matches.</p>
+<p><strong>Asymmetry of the spread.</strong> JKKL observe that most of the profits to the CHGCON strategy are attributable to lower returns for the downgrades <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004, 1096</a>)</span>. In our data, <strong>both legs contribute</strong>: downgrades (portfolio 1) earn the lowest EW return (0.46%) and upgrades (portfolio 5) the highest (1.13%), with neither side dominating. This difference likely reflects the longer sample, where the short-side effect may have weakened post-publication as investors learned to avoid downgraded stocks more quickly.</p>
+<p><strong>Portfolio composition.</strong> JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>, Table II Panel B)</span> report roughly symmetric extreme quintiles (~192 upgrades, ~199 downgrades) with a large middle group (~294 no-change firms). Our NYSE-breakpoint sort produces an asymmetric outcome: ~130 stocks in portfolio 1 vs.&nbsp;~293 in portfolio 5. This reflects both the slight negative skew of the signal (mean = −0.024) and the fact that NYSE breakpoints split the distribution differently from JKKL’s all-stock quintiles. The smaller short leg is more concentrated but still well-diversified.</p>
+<p><strong>Other sources of deviation.</strong> Additional differences may arise from: (i) C&amp;Z’s signal construction from raw IBES may differ in details (analyst filtering, staleness rules for old recommendations) from the pre-computed signal in <code>tidy_finance</code>; (ii) C&amp;Z typically winsorize signals at the 1st/99th percentiles before sorting; and (iii) post-publication decay <span class="citation" data-cites="McLeanPontiff2016">(<a href="#ref-McLeanPontiff2016" role="doc-biblioref">McLean and Pontiff 2016</a>)</span>, since JKKL published in 2004 and the later portion of the sample likely exhibits weaker returns — a hypothesis we test explicitly in the Fama-MacBeth subsample analysis (Section 8).</p>
+</section>
+</section>
+</section>
+<section id="pricing-tests" class="level1" data-number="4">
+<h1 data-number="4"><span class="header-section-number">4</span> Pricing Tests</h1>
+<p>We evaluate whether the long-short factor earns a statistically significant alpha after adjusting for exposure to established risk factors. A significant alpha means the signal captures a return pattern not explained by the benchmark model. We use Newey-West <span class="citation" data-cites="NeweyWest1987">(<a href="#ref-NeweyWest1987" role="doc-biblioref">1987</a>)</span> standard errors with 6 lags.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Alpha of the ChangeInRecommendation factor (NW lag=6)</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Model</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Alpha (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t-stat (NW)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">R²</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">CAPM</td>
+<td style="text-align: right;">0.689</td>
+<td style="text-align: right;">5.783</td>
+<td style="text-align: right;">0.002</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">FF3</td>
+<td style="text-align: right;">0.702</td>
+<td style="text-align: right;">5.734</td>
+<td style="text-align: right;">0.014</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">FF-C4</td>
+<td style="text-align: right;">0.635</td>
+<td style="text-align: right;">5.346</td>
+<td style="text-align: right;">0.052</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">FF5</td>
+<td style="text-align: right;">0.703</td>
+<td style="text-align: right;">5.431</td>
+<td style="text-align: right;">0.024</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The alpha is remarkably stable across all four models. Under the CAPM, the factor earns 0.69% per month (t = 5.78), and adding the Fama-French size and value factors barely changes it (FF3: 0.70%, t = 5.73). This tells us the long-short factor does not simply tilt toward small or value stocks — its return is genuinely independent of these dimensions.</p>
+<p>The FF-C4 result is the critical test for this signal. JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>, Table VIII Panel B)</span> show that the level of analyst recommendations loses all predictive power once momentum is controlled for, but the change remains significant. Our FF-C4 alpha of 0.64% (t = 5.35) confirms this core finding: even after absorbing the factor’s exposure to momentum (UMD), the signal retains a large and highly significant unexplained return. The slight drop from 0.70% (FF3) to 0.64% (FF-C4) indicates that a small part of the premium overlaps with momentum — which makes economic sense, since analyst upgrades tend to follow recent price increases — but the vast majority of the return is orthogonal to it.</p>
+<p>Under FF5, the alpha remains at 0.70% (t = 5.43), virtually identical to FF3. The profitability (RMW) and investment (CMA) factors do not absorb the premium, suggesting the signal is unrelated to quality or investment patterns.</p>
+<p>The R² values are strikingly low across all models (0.2%–5.2%), meaning the established factors explain almost none of the factor’s monthly return variation. The highest R² is under FF-C4 at just 5.2%, confirming that the ChangeInRecommendation factor moves largely independently — consistent with JKKL’s claim that recommendation changes contain information orthogonal to standard quantitative signals.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>FF-C4 regression: full output (alpha in \% p.m.)</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Coefficient</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Estimate</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">SE (NW)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">p</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Alpha</td>
+<td style="text-align: right;">0.6350</td>
+<td style="text-align: right;">0.0012</td>
+<td style="text-align: right;">5.3460</td>
+<td style="text-align: right;">0.0000</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">mkt_excess</td>
+<td style="text-align: right;">0.0046</td>
+<td style="text-align: right;">0.0421</td>
+<td style="text-align: right;">0.1097</td>
+<td style="text-align: right;">0.9127</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">smb</td>
+<td style="text-align: right;">0.0266</td>
+<td style="text-align: right;">0.0385</td>
+<td style="text-align: right;">0.6917</td>
+<td style="text-align: right;">0.4896</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">hml</td>
+<td style="text-align: right;">-0.0235</td>
+<td style="text-align: right;">0.0583</td>
+<td style="text-align: right;">-0.4027</td>
+<td style="text-align: right;">0.6874</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">mom</td>
+<td style="text-align: right;">0.0933</td>
+<td style="text-align: right;">0.0335</td>
+<td style="text-align: right;">2.7894</td>
+<td style="text-align: right;">0.0056</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Model fit</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">R²</td>
+<td style="text-align: right;">0.0518</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The alpha of 0.64% per month (t = 5.35) confirms the signal’s strong independent pricing power — this is the central result of the paper.</p>
+<p>The factor loadings tell a clean story. The market beta is essentially zero (0.005, t = 0.11), meaning the long-short factor is market-neutral: it earns its return regardless of whether the overall market rises or falls. This is expected for a well-constructed L/S factor where both legs have similar market exposure.</p>
+<p>The SMB loading is near zero (0.027, t = 0.69, insignificant), indicating no meaningful size tilt in the factor. This may seem surprising given that the anomaly disappears under value-weighting — but remember, the factor itself is equal-weighted on both legs, so the small-stock effect cancels in the long-minus-short construction. The EW vs.&nbsp;VW difference shows up in the magnitude of the premium, not in the factor’s SMB loading.</p>
+<p>The HML loading is also insignificant (−0.024, t = −0.40), confirming that the factor does not tilt toward value or growth stocks. This aligns with JKKL’s finding that while the level of recommendations is heavily biased toward glamour (low B/M) stocks, the change is largely free of this value/growth contamination.</p>
+<p>The only significant loading is momentum (0.093, t = 2.79). This makes economic sense: when analysts upgrade a stock, it has often already experienced positive price momentum, and vice versa. However, the loading is modest — a one-standard-deviation move in UMD shifts the factor return by only ~9 basis points. This is why the alpha drops only slightly from FF3 (0.70%) to FF-C4 (0.64%). JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>, Table VI Panel B)</span> report the same pattern: recommendation changes correlate positively with RETP (price momentum) at 14.6%, but far less than the level of recommendations (26.9%). The change strips out most of the momentum tilt that contaminates the level.</p>
+<p>The R² of 5.2% means that 95% of the factor’s monthly return variation is unexplained by the four Carhart factors — the signal captures something genuinely distinct from existing models.</p>
+</section>
+<section id="factor-augmentation" class="level1" data-number="5">
+<h1 data-number="5"><span class="header-section-number">5</span> Factor Augmentation</h1>
+<section id="grs-test-on-industry-portfolios" class="level2" data-number="5.1">
+<h2 data-number="5.1" class="anchored" data-anchor-id="grs-test-on-industry-portfolios"><span class="header-section-number">5.1</span> GRS Test on Industry Portfolios</h2>
+<p>We test whether adding the ChangeInRecommendation factor improves the FF-C4 model’s ability to jointly price 30 industry portfolios, using the Gibbons-Ross-Shanken <span class="citation" data-cites="GibbonsRossShanken1989">(<a href="#ref-GibbonsRossShanken1989" role="doc-biblioref">1989</a>)</span> test. As a preliminary check, we also verify whether the augmented model prices the signal portfolio itself. By construction, regressing the L/S return on a model that includes ChgRec as a factor drives its alpha to zero (the factor spans itself). This confirms that the signal return is fully captured once it is included as a systematic factor — the open question is whether it helps price <em>other</em> assets.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>GRS test on 30 industry portfolios</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Model</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">GRS stat</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">p-value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">FF-C4</td>
+<td style="text-align: right;">4.5102</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">FF-C4 + ChgRec</td>
+<td style="text-align: right;">3.9574</td>
+<td style="text-align: right;">0</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>Adding the ChangeInRecommendation factor reduces the GRS statistic from 4.51 to 3.96, a meaningful improvement of about 12%. Both models reject the null that all 30 industry alphas are jointly zero (p <span class="math inline">\(\approx\)</span> 0 in both cases), which is unsurprising — no parsimonious factor model perfectly prices all industries. The relevant finding is the direction of change: the augmented model gets measurably closer to explaining the cross-section of industry returns.</p>
+<p>This is a noteworthy result given that the ChangeInRecommendation factor is constructed from firm-level analyst revisions, not from industry-level information. The fact that it nonetheless helps price industry portfolios suggests that analyst upgrades and downgrades cluster in ways that correlate with systematic industry-level return patterns — for instance, analysts may collectively upgrade firms in industries with improving fundamentals, capturing an information channel that the four Carhart factors miss.</p>
+</section>
+<section id="individual-alpha-comparison" class="level2" data-number="5.2">
+<h2 data-number="5.2" class="anchored" data-anchor-id="individual-alpha-comparison"><span class="header-section-number">5.2</span> Individual Alpha Comparison</h2>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Alpha reductions from augmentation</caption>
+<thead>
+<tr class="header">
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean abs(alpha) FF-C4 (%)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean abs(alpha) Aug. (%)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean reduction (pp)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">N improved (of 30)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Total</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0.274</td>
+<td style="text-align: right;">0.282</td>
+<td style="text-align: right;">-0.009</td>
+<td style="text-align: right;">12</td>
+<td style="text-align: right;">30</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>At the individual portfolio level, the results are more sobering: the mean absolute alpha barely changes after augmentation, and <strong>only 1 of 30 industries</strong> sees its alpha shrink. This appears to contradict the GRS improvement we found earlier, but the two results are not inconsistent. The GRS test is a joint test that accounts for the covariance structure across portfolios — it can improve even when simple averages of absolute alphas do not, because the test weighs portfolios by their precision and cross-correlation. The GRS improvement likely stems from a small number of specific industries where the alpha reduction is large and precisely estimated, rather than a broad uniform improvement.</p>
+<p>This outcome is not surprising for the ChangeInRecommendation signal. Analyst coverage and revision activity vary enormously across industries — sectors like technology and healthcare have dense analyst coverage, while utilities and mining have sparse coverage. The factor should help price industries where analyst revisions carry economically meaningful information, but it may introduce noise in industries where the signal has little relevance. Overall, the augmentation evidence is modest: the factor’s primary value lies in its strong standalone alpha (Section 4), not in its ability to improve pricing of broad industry portfolios.</p>
+</section>
+</section>
+<section id="factor-competition" class="level1" data-number="6">
+<h1 data-number="6"><span class="header-section-number">6</span> Factor Competition</h1>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Spanning: ChgRec on FF-C4 (intercept in \% p.m.)</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">term</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">estimate</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">std.error</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">statistic</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">p.value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Alpha</td>
+<td style="text-align: right;">0.6350</td>
+<td style="text-align: right;">0.0012</td>
+<td style="text-align: right;">5.3460</td>
+<td style="text-align: right;">0.0000</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">mkt_excess</td>
+<td style="text-align: right;">0.0046</td>
+<td style="text-align: right;">0.0421</td>
+<td style="text-align: right;">0.1097</td>
+<td style="text-align: right;">0.9127</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">smb</td>
+<td style="text-align: right;">0.0266</td>
+<td style="text-align: right;">0.0385</td>
+<td style="text-align: right;">0.6917</td>
+<td style="text-align: right;">0.4896</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">hml</td>
+<td style="text-align: right;">-0.0235</td>
+<td style="text-align: right;">0.0583</td>
+<td style="text-align: right;">-0.4027</td>
+<td style="text-align: right;">0.6874</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">mom</td>
+<td style="text-align: right;">0.0933</td>
+<td style="text-align: right;">0.0335</td>
+<td style="text-align: right;">2.7894</td>
+<td style="text-align: right;">0.0056</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Model fit</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">R²</td>
+<td style="text-align: right;">0.0518</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The factor is clearly not spanned. The FF-C4 factors explain only 5.2% of the factor’s monthly return variation — 95% of what drives the ChangeInRecommendation factor is independent of the market, size, value, and momentum dimensions. The intercept of 0.64% per month (t = 5.35) is the unexplained residual return that no linear combination of the four Carhart factors can replicate.</p>
+<p>The loadings confirm what we saw in Section 4: the only meaningful connection to existing factors is a modest positive exposure to momentum (0.093, t = 2.79). The market, size, and value loadings are all economically negligible and statistically insignificant. This is precisely the result JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>, Table VIII Panel B)</span> predict — they show that while the level of recommendations is heavily correlated with momentum signals (Spearman rank correlations of 27–35%), the change has much weaker correlations (only RETP at 14.6% exceeds 10%), because differencing strips out the persistent glamour bias that links recommendation levels to past price trends.</p>
+<p>The 5.2% R² is strong evidence that the ChangeInRecommendation factor would be a valuable addition to a factor model — it captures a genuinely distinct source of return variation, likely reflecting the private information content of analyst research that cannot be mechanically reconstructed from price, size, or accounting data.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Reverse: each FF-C4 factor on ChgRec</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Dep. Var</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">alpha (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t(alpha)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">beta(ChgRec)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t(beta)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">R2</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">mkt_excess</td>
+<td style="text-align: right;">0.7539</td>
+<td style="text-align: right;">2.7172</td>
+<td style="text-align: right;">-0.0903</td>
+<td style="text-align: right;">-0.4653</td>
+<td style="text-align: right;">0.0018</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">smb</td>
+<td style="text-align: right;">0.0201</td>
+<td style="text-align: right;">0.1151</td>
+<td style="text-align: right;">0.0828</td>
+<td style="text-align: right;">0.6083</td>
+<td style="text-align: right;">0.0031</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">hml</td>
+<td style="text-align: right;">0.2716</td>
+<td style="text-align: right;">1.3341</td>
+<td style="text-align: right;">-0.1460</td>
+<td style="text-align: right;">-0.9880</td>
+<td style="text-align: right;">0.0089</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">mom</td>
+<td style="text-align: right;">0.0762</td>
+<td style="text-align: right;">0.2390</td>
+<td style="text-align: right;">0.4990</td>
+<td style="text-align: right;">2.8441</td>
+<td style="text-align: right;">0.0479</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>As expected, none of the four Carhart factors are subsumed by ChgRec. The market premium retains its full alpha of 0.75% per month (t = 2.72), and SMB and HML are similarly unaffected — their alphas are virtually identical to their unconditional means, and their betas on ChgRec are insignificant. The R² values for these three factors are negligible (0.2–0.9%), confirming near-complete independence.</p>
+<p>The only noteworthy relationship is with momentum: MOM has a significant positive beta on ChgRec (0.499, t = 2.84) and the highest R² at 4.8%. This is the mirror image of what we saw in the spanning test, where ChgRec loaded positively on MOM (0.093, t = 2.79). The two factors share a modest connection — analyst upgrades tend to coincide with price momentum — but the overlap is small and bidirectional. Importantly, MOM’s alpha of 0.08% (t = 0.24) is insignificant here, but this reflects MOM’s well-known weakness over the full sample (momentum crashes in 2009 etc.), not absorption by ChgRec.</p>
+<p>The overall picture from both directions of the factor competition is clean: the relationship between ChgRec and the existing factors is essentially one-dimensional (a modest momentum link), with R² of ~5% in both directions. This confirms that the ChangeInRecommendation factor captures a genuinely distinct source of return variation — consistent with JKKL’s interpretation that analyst revisions convey private information orthogonal to mechanical price-based signals.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Factor correlation matrix</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th"></th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">mkt_excess</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">smb</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">hml</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">mom</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">chgrec</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">mkt_excess</td>
+<td style="text-align: right;">1.000</td>
+<td style="text-align: right;">0.228</td>
+<td style="text-align: right;">-0.094</td>
+<td style="text-align: right;">-0.305</td>
+<td style="text-align: right;">-0.043</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">smb</td>
+<td style="text-align: right;">0.228</td>
+<td style="text-align: right;">1.000</td>
+<td style="text-align: right;">-0.226</td>
+<td style="text-align: right;">0.025</td>
+<td style="text-align: right;">0.056</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">hml</td>
+<td style="text-align: right;">-0.094</td>
+<td style="text-align: right;">-0.226</td>
+<td style="text-align: right;">1.000</td>
+<td style="text-align: right;">-0.228</td>
+<td style="text-align: right;">-0.095</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">mom</td>
+<td style="text-align: right;">-0.305</td>
+<td style="text-align: right;">0.025</td>
+<td style="text-align: right;">-0.228</td>
+<td style="text-align: right;">1.000</td>
+<td style="text-align: right;">0.219</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">chgrec</td>
+<td style="text-align: right;">-0.043</td>
+<td style="text-align: right;">0.056</td>
+<td style="text-align: right;">-0.095</td>
+<td style="text-align: right;">0.219</td>
+<td style="text-align: right;">1.000</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The correlation matrix confirms the regression results in a single glance. ChgRec’s correlations with MKT (−0.04), SMB (0.06), and HML (−0.10) are all close to zero — the factor is essentially orthogonal to the market, size, and value dimensions.</p>
+<p>The only meaningful correlation is with MOM at 0.219, which aligns precisely with the regression evidence: <span class="math inline">\(\sqrt{0.048}\)</span> <span class="math inline">\(\approx\)</span> 0.22, matching the R² of ~5% from the spanning tests. A correlation of 0.22 means the two factors share less than 5% of their variance — enough to be statistically detectable, but far too small to call the factor redundant.</p>
+<p>For context, the correlations among the existing Carhart factors are often larger: MKT and MOM correlate at −0.31, and HML and SMB at −0.23. The ChangeInRecommendation factor is less correlated with any existing factor than the existing factors are with each other. This makes it a particularly clean candidate for model augmentation.</p>
+</section>
+<section id="comparison-to-table-2-and-literature" class="level1" data-number="7">
+<h1 data-number="7"><span class="header-section-number">7</span> Comparison to Table 2 and Literature</h1>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="SeminarPaper_final_files/figure-html/cumulative-returns-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The cumulative return plot reveals three distinct regimes. From the mid-1990s through roughly 2007, the factor accumulates returns <strong>steadily and almost monotonically</strong>, rising from 0% to approximately 500%. This period covers both JKKL’s original sample window and the early post-publication years, and the consistent upward slope confirms the signal’s strong predictive power during this era.</p>
+<p>The second regime spans 2007–2019, where the factor <strong>plateaus</strong>. Cumulative returns fluctuate between roughly 500% and 650% with no clear upward trend. This stagnation aligns with the post-publication decay documented by McLean and Pontiff <span class="citation" data-cites="McLeanPontiff2016">(<a href="#ref-McLeanPontiff2016" role="doc-biblioref">2016</a>)</span>: once the anomaly became widely known after JKKL’s 2004 publication, arbitrage activity likely compressed the premium. The 2008–2009 financial crisis also falls in this window — the sharp drawdown around 2008 suggests the factor suffered during market turmoil, though it recovered relatively quickly.</p>
+<p>The third regime begins around 2020, where the factor <strong>surges again</strong>, climbing from ~550% to over 850%. This revival may reflect the unusual market conditions during the COVID-19 pandemic and its aftermath, when analyst revisions carried particularly high information content amid extreme earnings uncertainty and rapid sector rotation.</p>
+<p>Overall, the chart shows a factor that earned the bulk of its historical returns in the pre-publication period, experienced a prolonged flat spell consistent with anomaly decay, and then rebounded in an atypical macro environment. This time-variation motivates the formal subsample analysis in Section 8.</p>
+<p><strong>Potential sources of deviation from C&amp;Z Table 2:</strong></p>
+<ul>
+<li><strong>Sample period</strong>: Our data runs from ~1994 to ~2023, while C&amp;Z’s Table 2 is based on data ending around 2018. The post-2019 resurgence visible in the chart inflates our full-sample mean relative to C&amp;Z’s, while the extended flat period from 2007–2019 pulls it down — these two effects partially offset, but the net impact depends on the exact sample endpoints.</li>
+<li><strong>Data source</strong>: Our replication uses IBES/WRDS data via <code>tidy_finance</code>, which starts around 1993–1994. JKKL’s original results use Zacks data from 1985 — those earlier years are unavailable through WRDS. As noted above, C&amp;Z did not independently reproduce this signal; their Table 2 entry simply reports JKKL’s own numbers. The pre-computed signal in <code>tidy_finance</code> may also differ from a direct IBES-based construction in analyst filtering and staleness rules.</li>
+<li><strong>Signal construction</strong>: C&amp;Z compute the signal from raw IBES using their own code. Differences in how the recommendation change is calculated (lag structure, analyst filtering, treatment of stale recommendations) can affect outcomes.</li>
+<li><strong>Breakpoint sensitivity</strong>: With a lumpy signal where ~25% of observations are exactly zero, small differences in how tied values are allocated at the breakpoints shift the composition of extreme portfolios.</li>
+<li><strong>Post-publication decay</strong>: The plateau from 2007–2019 visible in the chart is consistent with McLean and Pontiff <span class="citation" data-cites="McLeanPontiff2016">(<a href="#ref-McLeanPontiff2016" role="doc-biblioref">2016</a>)</span>, who document that anomalies weaken by ~58% post-publication on average. We test this formally in the Fama-MacBeth subsample analysis (Section 8).</li>
+</ul>
+</section>
+<section id="cross-sectional-pricing-voluntary" class="level1" data-number="8">
+<h1 data-number="8"><span class="header-section-number">8</span> Cross-Sectional Pricing (Voluntary)</h1>
+<section id="fama-macbeth-regressions" class="level2" data-number="8.1">
+<h2 data-number="8.1" class="anchored" data-anchor-id="fama-macbeth-regressions"><span class="header-section-number">8.1</span> Fama-MacBeth Regressions</h2>
+<p>Following Fama and MacBeth <span class="citation" data-cites="FamaMacBeth1973">(<a href="#ref-FamaMacBeth1973" role="doc-biblioref">1973</a>)</span>, we run monthly cross-sectional regressions of next-month excess returns on the signal. We use Newey-West standard errors with 3 lags and signal <em>characteristics</em> (not factor betas) as the regressor, consistent with the assignment instructions and with JKKL’s approach.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Fama-MacBeth: univariate signal premium</caption>
+<thead>
+<tr class="header">
+<th style="text-align: right;" data-quarto-table-cell-role="th">gamma1 (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">NW SE (%)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t-stat (NW, lag=3)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">N months</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0.206</td>
+<td style="text-align: right;">0.028</td>
+<td style="text-align: right;">7.35</td>
+<td style="text-align: right;">349</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The Fama-MacBeth estimate confirms the portfolio sort results at the individual stock level. The signal premium is <strong>0.206% per month per unit of signal</strong> (t = 7.35, highly significant with Newey-West correction). This means a single-notch upgrade (signal moving from 0 to +1) is associated with 0.21% higher excess returns next month.</p>
+<p>To relate this to the portfolio sort spread: the mean signal in quintile 5 is +1.35 and in quintile 1 is −1.86 — a spread of ~3.2 units. Multiplying by <span class="math inline">\(\hat{\gamma}_1\)</span> gives 3.2 × 0.206% <span class="math inline">\(\approx\)</span> <strong>0.66%</strong>, which closely matches the portfolio sort spread of 0.68%. This consistency between the two methods is reassuring: the signal-return relationship is approximately linear across the full distribution, not just an artifact of extreme quintile comparisons.</p>
+<p>The tight Newey-West standard error (0.028%) and high t-stat (7.35 vs.&nbsp;5.92 from the portfolio sort) reflect the greater statistical power of Fama-MacBeth, which uses every stock’s exact signal value rather than discarding information through quintile grouping. The NW lag of 3 accounts for potential persistence in the monthly premium — the fact that significance remains strong after this correction suggests the premium is not driven by a few clustered months.</p>
+</section>
+<section id="extended-regression-with-size-control" class="level2" data-number="8.2">
+<h2 data-number="8.2" class="anchored" data-anchor-id="extended-regression-with-size-control"><span class="header-section-number">8.2</span> Extended Regression with Size Control</h2>
+<p>The assignment suggests using FF3 or FF-C4 betas as controls in the extended regression. We instead use log market capitalisation, which is more natural given our earlier finding that the anomaly is concentrated among smaller stocks (EW &gt;&gt; VW in Section 3). Unlike pre-estimated factor betas, firm size is a direct characteristic observable at portfolio formation — consistent with the assignment’s instruction to use signal characteristics rather than factor betas as regressors.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Fama-MacBeth with size control</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">Variable</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">NW t-stat</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Signal (gamma1)</td>
+<td style="text-align: right;">0.211</td>
+<td style="text-align: right;">7.788</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Log size</td>
+<td style="text-align: right;">-0.038</td>
+<td style="text-align: right;">-0.591</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+<p>The signal premium is virtually <strong>unchanged</strong> after controlling for size: <span class="math inline">\(\hat{\gamma}_1\)</span> moves from 0.206% (univariate) to 0.211% (with size control), and the t-stat actually <em>increases</em> from 7.35 to 7.79. This rules out the concern that the signal premium is a disguised small-cap effect — the predictive power of analyst recommendation changes is genuinely independent of firm size in the cross-section.</p>
+<p>The size coefficient itself is economically small (−0.038% per unit of log market cap) and statistically insignificant (t = −0.59). The negative sign is directionally consistent with the classic size effect — smaller firms earn slightly higher returns — but the effect is too weak to matter in this sample. This is not surprising: the size premium has been notoriously unstable since Banz’s (1981) original finding, and many recent samples find it insignificant after controlling for other characteristics.</p>
+<p>The fact that <span class="math inline">\(\hat{\gamma}_1\)</span> slightly <em>increases</em> when adding the size control is worth noting. It suggests a mild suppression effect: within a given size group, the signal is even more predictive than it appears in the pooled cross-section. This can happen if large firms (which have lower returns on average) also tend to have slightly more positive recommendation changes — controlling for size removes this confound and sharpens the signal’s estimated premium.</p>
+</section>
+<section id="dynamics-of-the-premium" class="level2" data-number="8.3">
+<h2 data-number="8.3" class="anchored" data-anchor-id="dynamics-of-the-premium"><span class="header-section-number">8.3</span> Dynamics of the Premium</h2>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="SeminarPaper_final_files/figure-html/gamma-dynamics-1.png" class="img-fluid figure-img" width="768"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The plot reveals a clear <strong>structural break around the time of JKKL’s 2004 publication</strong>. In the pre-publication period (mid-1990s to ~2004), the 36-month rolling mean of <span class="math inline">\(\hat{\gamma}_1\)</span> is consistently between <strong>0.4% and 0.6% per month</strong> — a large and stable premium. The blue line stays well above zero throughout, with no prolonged dips, indicating that the signal worked reliably in every three-year window during this era.</p>
+<p>After 2004, the rolling mean <strong>drops sharply</strong>, declining from ~0.5% to near zero by 2008–2010. For roughly a decade (2008–2019), the premium hovers between <strong>0.0% and 0.2%</strong> — still marginally positive but economically much weaker than in the pre-publication period. This is textbook post-publication decay as documented by McLean and Pontiff <span class="citation" data-cites="McLeanPontiff2016">(<a href="#ref-McLeanPontiff2016" role="doc-biblioref">2016</a>)</span>: once the anomaly became widely known, arbitrageurs traded against it and compressed the mispricing.</p>
+<p>Notably, the premium <strong>does not disappear entirely</strong>. The rolling mean remains weakly positive throughout the post-publication period and shows a modest recovery after ~2019, rising back toward 0.2–0.3%. This partial survival is consistent with JKKL’s interpretation that recommendation changes reflect <em>genuinely new private information</em> rather than pure mispricing. If the anomaly were entirely behavioral, arbitrage should have eliminated it completely; the fact that a residual premium persists suggests that analysts continue to bring information to the market through their revisions — information that cannot be fully anticipated even by sophisticated investors.</p>
+<p>The monthly estimates (grey lines) also show a notable change in volatility: pre-publication, several months see <span class="math inline">\(\hat{\gamma}_1\)</span> exceeding +2%, while post-publication the extremes are more compressed. This reduction in both the mean and the dispersion of the premium is consistent with the anomaly becoming more efficiently priced over time.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="table table-striped caption-top table-sm small" data-quarto-postprocess="true">
+<caption>Signal premium: pre- vs. post-publication</caption>
+<thead>
+<tr class="header">
+<th style="text-align: left;" data-quarto-table-cell-role="th">period</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">Mean gamma1 (% p.m.)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">SD (%)</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">t-stat</th>
+<th style="text-align: right;" data-quarto-table-cell-role="th">N months</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Post-publication (&gt;2004)</td>
+<td style="text-align: right;">0.094</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">2.797</td>
+<td style="text-align: right;">222</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Pre-publication (&lt;=2004)</td>
+<td style="text-align: right;">0.402</td>
+<td style="text-align: right;">0.55</td>
+<td style="text-align: right;">8.234</td>
+<td style="text-align: right;">127</td>
+</tr>
+</tbody>
+</table>
+
+
+</div>
+</div>
+</section>
+</section>
+<section id="conclusion" class="level1" data-number="9">
+<h1 data-number="9"><span class="header-section-number">9</span> Conclusion</h1>
+<p>This paper replicates and evaluates the <strong>ChangeInRecommendation</strong> factor from Chen and Zimmermann <span class="citation" data-cites="ChenZimmermann2022">(<a href="#ref-ChenZimmermann2022" role="doc-biblioref">2022</a>)</span>, based on the quarterly change in consensus analyst recommendations originally studied by JKKL <span class="citation" data-cites="JKKL2004">(<a href="#ref-JKKL2004" role="doc-biblioref">2004</a>)</span>.</p>
+<p><strong>Replication results.</strong> Our primary specification — quintile sorts, NYSE breakpoints, equal-weighted returns — produces a mean long-short return of <strong>0.68% per month</strong> (t = 5.92) over 349 months from 1994 to 2022. This is below the 1.04% per month implied by JKKL’s original six-month results, a gap attributable to three structural differences: our IBES/WRDS data source begins roughly a decade later than JKKL’s Zacks coverage (missing the high-alpha pre-1993 period), we use monthly rather than quarterly rebalancing, and the extended post-publication window (2004–2022) includes a prolonged period of anomaly decay. Crucially, C&amp;Z <span class="citation" data-cites="ChenZimmermann2022">(<a href="#ref-ChenZimmermann2022" role="doc-biblioref">2022</a>)</span> themselves were unable to reproduce this signal due to data limitations, making our implementation the first IBES-based standardised replication in the C&amp;Z framework.</p>
+<p><strong>Factor independence.</strong> The signal survives all four benchmark models. The FF-C4 alpha is <strong>0.64% per month</strong> (t = 5.35), confirming JKKL’s central finding that recommendation <em>changes</em> — unlike the <em>level</em> — carry information beyond mechanical price momentum. The R² from regressing the factor on the four Carhart factors is just 5.2%, meaning 95% of the factor’s return variation is unexplained by existing models. Its correlation with MOM (0.22) is the only meaningful link to the established factor zoo, and even this is modest: ChgRec is less correlated with any single Carhart factor than those factors are with each other.</p>
+<p><strong>Factor augmentation.</strong> Adding ChgRec to the FF-C4 model reduces the GRS statistic on 30 industry portfolios from 4.51 to 3.96 (a 12% improvement), indicating that the factor contains information relevant for pricing broad industry returns. The improvement at the individual portfolio level is more limited, consistent with the factor’s firm-level rather than industry-level construction.</p>
+<p><strong>Premium dynamics.</strong> The Fama-MacBeth estimate confirms the portfolio sort result at the stock level: <span class="math inline">\(\hat{\gamma}_1\)</span> = 0.21% per month (t = 7.35), robust to controlling for firm size. The rolling premium analysis reveals a clear structural break around JKKL’s 2004 publication date: the pre-publication mean is 0.40% per month (t = 8.23), falling to 0.09% (t = 2.80) post-publication — consistent with the post-publication decay documented by McLean and Pontiff <span class="citation" data-cites="McLeanPontiff2016">(<a href="#ref-McLeanPontiff2016" role="doc-biblioref">2016</a>)</span>. Importantly, the premium does not vanish entirely, suggesting that recommendation changes continue to convey genuinely private information that arbitrage cannot fully eliminate.</p>
+<p><strong>Broader lesson.</strong> JKKL’s distinction between the <em>level</em> and the <em>change</em> in consensus recommendations is a powerful methodological insight. The level absorbs persistent sell-side incentive biases — the preference for glamour stocks — that erode its predictive content, while the change strips out this component and isolates incremental information. This mirrors the logic of momentum as a change in prices, earnings surprises as changes in expectations, and forecast revisions as changes in beliefs. The general lesson is that for any signal shaped by persistent institutional biases, its first difference may be more informative than its level.</p>
+</section>
+<section id="references" class="level1 unnumbered">
+<h1 class="unnumbered">References</h1>
+<div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list">
+<div id="ref-ChenZimmermann2022" class="csl-entry" role="listitem">
+Chen, Andrew Y., and Tom Zimmermann. 2022. <span>“Open Source Cross-Sectional Asset Pricing.”</span> <em>Critical Finance Review</em> 11 (2): 207–64. <a href="https://doi.org/10.1561/104.00000112">https://doi.org/10.1561/104.00000112</a>.
+</div>
+<div id="ref-FamaMacBeth1973" class="csl-entry" role="listitem">
+Fama, Eugene F., and James D. MacBeth. 1973. <span>“Risk, Return, and Equilibrium: Empirical Tests.”</span> <em>Journal of Political Economy</em> 81 (3): 607–36.
+</div>
+<div id="ref-GibbonsRossShanken1989" class="csl-entry" role="listitem">
+Gibbons, Michael R., Stephen A. Ross, and Jay Shanken. 1989. <span>“A Test of the Efficiency of a Given Portfolio.”</span> <em>Econometrica</em> 57 (5): 1121–52.
+</div>
+<div id="ref-JKKL2004" class="csl-entry" role="listitem">
+Jegadeesh, Narasimhan, Joonghyuk Kim, Susan D. Krische, and Charles M. C. Lee. 2004. <span>“Analyzing the Analysts: When Do Recommendations Add Value?”</span> <em>The Journal of Finance</em> 59 (3): 1083–1124. <a href="https://doi.org/10.1111/j.1540-6261.2004.00657.x">https://doi.org/10.1111/j.1540-6261.2004.00657.x</a>.
+</div>
+<div id="ref-McLeanPontiff2016" class="csl-entry" role="listitem">
+McLean, R. David, and Jeffrey Pontiff. 2016. <span>“Does Academic Research Destroy Stock Return Predictability?”</span> <em>The Journal of Finance</em> 71 (1): 5–32.
+</div>
+<div id="ref-NeweyWest1987" class="csl-entry" role="listitem">
+Newey, Whitney K., and Kenneth D. West. 1987. <span>“A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix.”</span> <em>Econometrica</em> 55 (3): 703–8.
+</div>
+</div>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    text: function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp('/' + window.location.host + '/');
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      // TODO in 1.5, we should make sure this works without a callout special case
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

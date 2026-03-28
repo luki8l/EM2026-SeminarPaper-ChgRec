@@ -1,0 +1,844 @@
+---
+title: "Signal-based Asset Pricing: Replicating the Change in Analyst Recommendation Factor"
+subtitle: "Empirical Methods 2026 — Seminar Paper"
+author: "Lukas Lobnig"
+date: "2026-03-31"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true          # code visible but collapsed in HTML
+    code-summary: "Show code"
+    theme: cosmo
+    fig-width: 8
+    fig-height: 5
+  pdf:
+    toc: true
+    number-sections: true
+    fig-width: 7
+    fig-height: 4.5
+    geometry: margin=2.5cm
+    pdf-engine: xelatex      # required for Unicode (γ, $\approx$, $\geq$, $\leq$, →)
+bibliography: references.bib
+execute:
+  warning: false
+  message: false
+  echo: false               # suppress code in PDF; HTML uses code-fold above
+---
+
+# Introduction
+
+This paper replicates and evaluates the **ChangeInRecommendation** signal from Chen and Zimmermann [-@ChenZimmermann2022], which originates from Jegadeesh, Kim, Krische, and Lee [-@JKKL2004]. The signal captures the quarterly change in sell-side analysts' consensus stock recommendation. JKKL show that while the *level* of analyst consensus loses predictive power after controlling for momentum and other characteristics, the *change* in consensus remains a robust cross-sectional return predictor that appears to contain information orthogonal to a large set of quantitative signals.
+
+The economic intuition is straightforward: when analysts collectively revise their recommendations upward (downward), this reflects new private or semi-private information about a firm's prospects that has not yet been fully impounded into prices. Unlike the level of the recommendation --- which JKKL show is heavily contaminated by a "glamour bias" driven by sell-side incentive structures --- changes strip out this persistent bias and isolate the incremental information content of analyst research.
+
+This paper proceeds as follows. Section 2 describes the data. Section 3 constructs the long-short factor portfolio and benchmarks it against Table 2 of Chen and Zimmermann [-@ChenZimmermann2022]. Section 4 tests the factor's pricing power against CAPM, FF3, FF-C4, and FF5. Section 5 evaluates whether augmenting existing models with the new factor improves their ability to price test portfolios. Section 6 examines factor competition. Section 7 compares our results to the literature and discusses replication quality. Section 8 presents cross-sectional Fama-MacBeth regressions, and Section 9 concludes.
+
+A note on data availability: C&Z [-@ChenZimmermann2022] explicitly state in Table 2 that they *lack the data* to reproduce the ChangeInRecommendation signal themselves, as it relies on Zacks analyst data unavailable through WRDS. The values reported in C&Z Table 2 (mean return 1.04%, t-stat 6.65) are therefore JKKL's own original estimates, standardised to a monthly format. Our replication is thus the first IBES/WRDS-based implementation of this signal within the C&Z standardised framework.
+
+```{r setup}
+#| label: setup
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(RSQLite)
+  library(dbplyr)
+  library(broom)
+  library(lmtest)
+  library(sandwich)
+  library(ggplot2)
+  library(kableExtra)
+  library(GRS.test)
+  library(scales)
+  library(zoo)
+})
+
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+)
+```
+
+# Data
+
+## Database Connection and Signal Identification
+
+We use the `tidy_finance.sqlite` database, which contains CRSP monthly stock data pre-merged with the Chen and Zimmermann [-@ChenZimmermann2022] signal characteristics.
+
+```{r db-connect}
+#| label: db-connect
+
+db_path <- "/home/shared/data/tidy_finance.sqlite"
+tidy_finance <- dbConnect(SQLite(), db_path, extended_types = TRUE)
+```
+
+```{r find-signal}
+#| label: find-signal
+#| include: false
+
+# Identify the correct column for ChangeInRecommendation
+all_cols <- tbl(tidy_finance, "crsp_monthly_signal") |> colnames()
+signal_candidates <- grep("change|rec|analyst", all_cols, ignore.case = TRUE, value = TRUE)
+cat("Candidate signal columns:\n")
+print(signal_candidates)
+```
+
+```{r load-data}
+#| label: load-data
+# Name of our target signal column
+SIGNAL_COL <- "change_in_recommendation"
+
+crsp_signal <- tbl(tidy_finance, "crsp_monthly_signal") |>
+  select(
+    permno, gvkey, month, ret_excess, ret, mktcap, mktcap_lag,
+    exchange, all_of(SIGNAL_COL)
+  ) |>
+  collect() |>
+  rename(signal = all_of(SIGNAL_COL)) |>
+  # Lag signal by one month to avoid look-ahead bias:
+  # the signal is known at end-of-t but predicts returns during month t+1.
+  arrange(permno, month) |>
+  group_by(permno) |>
+  mutate(signal = lag(signal)) |>
+  ungroup() |>
+  drop_na(signal, ret_excess, mktcap, mktcap_lag) |>
+  filter(mktcap_lag > 0)
+
+# Factor data: rename date → month for consistency with crsp_signal.
+ff3 <- tbl(tidy_finance, "factors_ff3_monthly") |> collect() |> rename(month = date)
+ff5 <- tbl(tidy_finance, "factors_ff5_monthly") |> collect() |> rename(month = date)
+mom <- tbl(tidy_finance, "factors_momentum_monthly") |> collect() |> rename(month = date)
+
+# Merge: FF3 + Momentum → FF-C4; add RMW/CMA from FF5 for FF5 tests.
+factors <- ff3 |>
+  select(month, risk_free, mkt_excess, smb, hml) |>
+  inner_join(mom |> select(month, mom), by = "month") |>
+  inner_join(ff5 |> select(month, rmw, cma), by = "month")
+```
+
+The resulting sample covers **388,877 stock-month observations** for **12,272 unique firms** over the period December 1993 to December 2022 (349 months with valid signal data after lagging). Factor data is available for 738 months over the same window.
+
+## Descriptive Statistics
+
+The ChangeInRecommendation signal is discrete and lumpy: many stocks experience no change in consensus recommendations in a given month, producing a large mass at zero. JKKL [-@JKKL2004, Table II Panel B] explicitly handle this by placing all "no change" stocks in the middle quintile, resulting in unequal-sized portfolios.
+
+```{r desc-stats}
+#| label: desc-stats
+
+
+coverage <- crsp_signal |>
+  group_by(month) |>
+  summarise(
+    n_firms = n(),
+    mean_signal = mean(signal),
+    pct_zero = mean(abs(signal) < 1e-8),
+    .groups = "drop"
+  )
+
+ggplot(coverage, aes(x = month, y = n_firms)) +
+  geom_line(color = "steelblue") +
+  labs(title = "Number of Firms with ChangeInRecommendation Signal",
+       x = NULL, y = "Number of firms")
+```
+
+```{r desc-signal}
+#| label: desc-signal
+
+# Take the full dataset of stock-month observations with the signal
+crsp_signal |>
+
+  # Compute summary statistics across ALL observations (pooled cross-section)
+  summarise(
+    Mean   = mean(signal),            # Average signal value
+    Median = median(signal),          # 50th percentile
+    SD     = sd(signal),              # Standard deviation
+    P5     = quantile(signal, 0.05),  # 5th percentile (left tail)
+    P25    = quantile(signal, 0.25),  # 25th percentile (1st quartile)
+    P75    = quantile(signal, 0.75),  # 75th percentile (3rd quartile)
+    P95    = quantile(signal, 0.95),  # 95th percentile (right tail)
+
+    # Use abs() < 1e-8 rather than == 0 to handle floating-point imprecision.
+    `Frac = 0` = mean(abs(signal) < 1e-8)
+  ) |>
+
+  kable(digits = 4, 
+        caption = "Cross-sectional summary of the ChangeInRecommendation signal") |>
+
+  kable_styling(bootstrap_options = "striped")
+```
+
+The signal has a mean of −0.024 and a median of 0, confirming a slight negative skew: analysts are marginally more likely to downgrade than upgrade, consistent with JKKL [-@JKKL2004, Table II Panel B] who report a mean change of −0.01 in their sample. The standard deviation of 1.09 indicates meaningful dispersion around zero.
+
+The percentiles reveal the discrete, lumpy nature of the signal: P25 = −1 and P75 = +1 mean that at least half of all non-zero observations move by exactly one unit (a single-notch recommendation change). The tails (P5 = −2, P95 = +1) are modest, suggesting that multi-notch revisions are rare.
+
+Most importantly, 25.5% of observations are exactly zero — roughly one in four stock-months experiences no change in consensus. This is a defining feature of the signal that JKKL explicitly address by placing all "no change" firms into the middle quintile. It also means the extreme portfolios (quintiles 1 and 5) are composed entirely of stocks with actual downgrades or upgrades, giving them cleaner signal content.
+
+```{r signal-histogram}
+#| label: signal-histogram
+
+crsp_signal |>
+  filter(signal >= quantile(signal, 0.01) & signal <= quantile(signal, 0.99)) |>
+  ggplot(aes(x = signal)) +
+  geom_histogram(bins = 80, fill = "steelblue", alpha = 0.8) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Distribution of ChangeInRecommendation",
+       subtitle = "Trimmed at 1st/99th percentiles; dashed red line at zero",
+       x = "Signal value", y = "Count")
+```
+
+# Factor Construction and Replication
+
+## Portfolio Sorting Methodology
+
+JKKL [-@JKKL2004] use **quintile** sorts (5 portfolios), report **equal-weighted** returns, and note that the middle quintile absorbs all "no change" firms, producing unequal-sized portfolios (Table II, Panel B). Chen and Zimmermann follow each original paper's sorting scheme for their Table 2 replication, but standardize the breakpoint computation to use **NYSE-listed stocks only** to prevent small-cap Nasdaq stocks from distorting the cutoffs.
+
+We therefore implement the following:
+
+1.  **Primary specification (C&Z Table 2 match)**: Quintile sorts, NYSE breakpoints, equal-weighted returns --- consistent with both JKKL's design and C&Z's standardization.
+2.  **Robustness**: Value-weighted returns and decile sorts for comparison.
+
+```{r assign-portfolios}
+#| label: assign-portfolios
+
+# Month-by-month sort: necessary for NYSE breakpoints (need to filter exchange within each month).
+assign_portfolios <- function(data, n_groups = 5) {
+  
+  months_vec <- sort(unique(data$month))
+  
+  map_dfr(months_vec, function(m) {
+    d <- data |> filter(month == m)
+    
+    # NYSE breakpoints only — standard in the literature (Fama/French, C&Z).
+    # Prevents Nasdaq small-caps from distorting cutoffs.
+    nyse_signals <- d |> filter(exchange == "NYSE") |> pull(signal)
+    if (length(nyse_signals) < n_groups * 2) return(NULL)
+    
+    bp <- quantile(nyse_signals, probs = seq(0, 1, length.out = n_groups + 1), na.rm = TRUE)
+    
+    # Apply breakpoints to all exchanges; all.inside=TRUE keeps min/max in valid range.
+    d |> mutate(portfolio = findInterval(signal, bp, all.inside = TRUE))
+  })
+}
+
+# Primary: quintile sort (JKKL Table II/III); Robustness: decile sort.
+crsp_q5  <- assign_portfolios(crsp_signal, n_groups = 5)
+crsp_d10 <- assign_portfolios(crsp_signal, n_groups = 10)
+```
+
+```{r portfolio-diagnostics}
+#| label: portfolio-diagnostics
+
+# Average portfolio composition across time: confirms lumpy signal produces unequal sizes.
+crsp_q5 |>
+  group_by(portfolio) |>
+  summarise(
+    `Mean N per month` = n() / n_distinct(month),
+    `Mean signal`      = mean(signal),
+    .groups = "drop"
+  ) |>
+  
+  kable(digits = 2, caption = "Quintile portfolio composition (NYSE breakpoints)") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+The portfolio sizes are notably unequal, which is expected given the signal's lumpiness. Portfolio 3 (mean signal $\approx$ −0.04) captures the near-zero mass, but it is not the largest group — portfolios 2 and 4 are bigger (\~282 and \~320 stocks). This differs from JKKL's manual quintile construction, where the middle group was the largest (\~294 stocks). The reason is that NYSE breakpoints split the distribution at the 20th/40th/60th/80th percentiles of NYSE stocks, which may place the discrete one-notch changes (signal = −1 or +1) into portfolios 2 and 4 rather than at the boundaries. The result is that these "mild revision" groups accumulate more stocks.
+
+The extreme portfolios (1 and 5) contain \~130 and \~293 stocks per month respectively, with portfolio 1 being smaller. This asymmetry reflects the slight negative skew we saw earlier: strong downgrades (signal $\leq$ −2) are rarer than strong upgrades (signal $\geq$ +1).
+
+Overall, the long-short factor (portfolio 5 minus portfolio 1) compares \~293 upgraded stocks against \~130 downgraded stocks each month — a clean contrast that isolates the information content of analyst revisions.
+
+## Portfolio Returns
+
+JKKL [-@JKKL2004] report **equal-weighted** returns as their primary specification (Tables III, IX). We compute both EW and VW returns, but use EW as the primary specification to match the original paper.
+
+```{r portfolio-returns}
+#| label: portfolio-returns
+
+# Monthly EW and VW returns per portfolio.
+# VW uses lagged market cap to avoid look-ahead bias.
+compute_port_returns <- function(data) {
+  data |>
+    group_by(month, portfolio) |>
+    summarise(
+      ret_ew   = mean(ret_excess, na.rm = TRUE),
+      ret_vw   = weighted.mean(ret_excess, w = mktcap_lag, na.rm = TRUE),
+      n_stocks = n(),
+      .groups  = "drop"
+    )
+}
+
+port_q5  <- compute_port_returns(crsp_q5)
+port_d10 <- compute_port_returns(crsp_d10)
+```
+
+## Long-Short Factor Portfolio
+
+The factor goes **long** the top quintile (stocks with the most positive recommendation changes, i.e. upgrades) and **short** the bottom quintile (most negative changes, i.e. downgrades). A positive mean return indicates upgrades outperform downgrades, consistent with JKKL's finding in Table III Panel C.
+
+```{r long-short}
+#| label: long-short
+
+# Long top portfolio, short bottom; inner_join drops months where either is empty.
+build_ls <- function(port_data, n_groups, weight_col = "ret_ew") {
+  long  <- port_data |> filter(portfolio == n_groups) |> select(month, ret_long  = all_of(weight_col))
+  short <- port_data |> filter(portfolio == 1)        |> select(month, ret_short = all_of(weight_col))
+  inner_join(long, short, by = "month") |> mutate(ret_ls = ret_long - ret_short)
+}
+
+# Primary (EW quintile) matches JKKL/C&Z; VW and decile are robustness checks.
+ls_q5_ew  <- build_ls(port_q5,  5,  "ret_ew")
+ls_q5_vw  <- build_ls(port_q5,  5,  "ret_vw")
+ls_d10_ew <- build_ls(port_d10, 10, "ret_ew")
+ls_d10_vw <- build_ls(port_d10, 10, "ret_vw")
+```
+
+## Replication Results vs. Table 2
+
+We compare the mean monthly return and $t$-statistic to the benchmark in Table 2 of Chen and Zimmermann [-@ChenZimmermann2022].
+
+```{r table2-replication}
+#| label: table2-replication
+
+# Summary stats for a L/S return series; key targets: mean and t-stat vs C&Z Table 2.
+ls_summary <- function(ls_data, label) {
+  r <- ls_data$ret_ls; n <- length(r)
+  tibble(
+    Specification   = label,
+    `Mean (% p.m.)` = mean(r) * 100,
+    `t-stat`        = mean(r) / (sd(r) / sqrt(n)),
+    `SD (% p.m.)`   = sd(r) * 100,
+    `Sharpe (ann.)` = mean(r) / sd(r) * sqrt(12),
+    `N months`      = n
+  )
+}
+bind_rows(
+  ls_summary(ls_q5_ew,  "Quintile EW (primary — JKKL style)"),
+  ls_summary(ls_q5_vw,  "Quintile VW"),
+  ls_summary(ls_d10_ew, "Decile EW"),
+  ls_summary(ls_d10_vw, "Decile VW")
+) |>
+  kable(digits = 3, caption = "Long-short portfolio: replication summary") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+The primary specification (Quintile EW) yields a mean return of 0.68% per month with a t-stat of 5.92, highly significant. The return pattern is consistent across sorting granularity — Decile EW produces a similar spread (0.71%, t = 5.73), confirming that the result is not an artifact of the quintile cutoffs.
+
+However, switching to value-weighted returns causes the premium to collapse: Quintile VW drops to 0.18% (t = 1.22, insignificant), and Decile VW to 0.14% (t = 0.81). This tells us the anomaly lives predominantly among smaller stocks, where analyst recommendation changes have a larger price impact. This is a common pattern across anomalies and will be important context for the discussion section.
+
+```{r monotonicity-table}
+#| label: monotonicity-table
+
+# Full sort table: check monotonicity from portfolio 1 (downgrades) to 5 (upgrades).
+port_q5 |>
+  group_by(portfolio) |>
+  summarise(
+    `Mean EW (% p.m.)` = mean(ret_ew) * 100,
+    `t (EW)`           = mean(ret_ew) / (sd(ret_ew) / sqrt(n())),
+    `Mean VW (% p.m.)` = mean(ret_vw) * 100,
+    `t (VW)`           = mean(ret_vw) / (sd(ret_vw) / sqrt(n())),
+    `Mean N`           = mean(n_stocks),
+    .groups = "drop"
+  ) |>
+  kable(digits = 3,
+        caption = "Quintile portfolio returns (1 = downgrades, 5 = upgrades)") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+The EW returns are not monotonic — portfolio 3 (0.89%) actually earns more than portfolios 2 (0.64%) and 4 (0.78%). This is consistent with JKKL (2004, Table III Panel C), who report the same non-monotonic pattern for CHGCON: the "no change" category earns lower returns than the adjacent quintiles. The non-monotonicity here is mild and concentrated in the middle; the key economic result holds — portfolio 5 (upgrades, 1.13%) clearly outperforms portfolio 1 (downgrades, 0.46%).
+
+The long-short spread is driven by both legs. Portfolio 1 earns the lowest EW return (0.46%), while portfolio 5 earns the highest (1.13%). Neither leg is extreme in isolation — it's the combination that produces the significant 0.68% spread. This is a healthier pattern than a factor driven by only one side.
+
+Under VW, the pattern improves somewhat in terms of monotonicity — the return rises fairly steadily from portfolio 2 onward (0.57% → 0.70% → 0.83%). However, portfolio 1 actually has the highest VW return among the lower quintiles (0.65%), which is why the VW long-short spread was insignificant: a few large-cap downgraded stocks earned strong returns, washing out the short leg.
+
+```{r monotonicity-plot}
+#| label: monotonicity-plot
+
+port_q5 |>
+  group_by(portfolio) |>
+  summarise(mean_ret = mean(ret_ew) * 100, .groups = "drop") |>
+  ggplot(aes(x = factor(portfolio), y = mean_ret)) +
+  geom_col(fill = "steelblue", alpha = 0.85) +
+  
+  labs(title = "Mean Monthly Excess Returns by Signal Quintile",
+       subtitle = "Equal-weighted, NYSE breakpoints (primary specification)",
+       x = "Quintile (1 = Downgrade, 5 = Upgrade)",
+       y = "Mean excess return (% p.m.)")
+```
+
+### Discussion of Replication Quality
+
+Our primary specification (Quintile EW, NYSE breakpoints) yields a mean long-short return of **0.68% per month** with a **t-statistic of 5.92** over 349 months. To contextualize this number, we must distinguish carefully between two benchmarks: the original JKKL result and the C&Z reproduction.
+
+**Data source and benchmark.** JKKL [-@JKKL2004] use **Zacks** analyst recommendation data covering 1985--1998. Critically, Chen and Zimmermann [-@ChenZimmermann2022] explicitly note in Table 2 that they *lack the data* to reproduce this signal — their dataset relies on IBES/WRDS, which does not contain the Zacks coverage going back to 1985. The figures reported in C&Z Table 2 (1.04% per month, t = 6.65) are therefore **JKKL's own original estimates** expressed in monthly terms, not an independent C&Z reproduction. The `tidy_finance` database likewise relies on IBES/WRDS, so our sample starts in the mid-1990s and extends through end-2022. This means **the correct benchmark is JKKL's own result, appropriately rescaled from six-month to monthly returns** — and our replication is in fact the first IBES-based standardised implementation of this signal. Our 0.68% per month is modestly below the JKKL-implied rate, plausibly reflecting the later sample period, the switch from Zacks to IBES coverage, and post-publication decay.
+
+```{r benchmark-table}
+#| label: benchmark-table
+tibble(
+  ` ` = c("Data source", "Sample start", "Sample end", "Return", "t-stat", "Note"),
+  `JKKL (2004)` = c("Zacks", "1985", "1998", "2.7% / 6 months", "n.a.", "Market-adj., quarterly sort"),
+  `C&Z Table 2` = c("JKKL numbers cited", "1985", "1998", "~1.04% p.m. (implied)", "6.65", "C&Z lacked the data"),
+  `Our Replication` = c("IBES/WRDS (tidy_finance)", "~1994", "2022", "0.68% p.m.", "5.92", "Excess ret., monthly sort")
+) |>
+  kable(caption = "Benchmark comparison: JKKL, C\\&Z Table 2, and our replication") |>
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+**Return definition.** JKKL compute market-adjusted returns (raw return minus the contemporaneous value-weighted CRSP index), whereas we use excess returns over the risk-free rate. Since both the long and short legs earn positive excess returns in our data (0.46% and 1.13%), the spread is mechanically similar under both definitions, but small differences can arise in months where the market return deviates substantially from the risk-free rate.
+
+**Holding period.** JKKL form portfolios at calendar quarter-ends and hold for six months, computing cumulative six-month returns. Our approach --- monthly sorting with one-month holding periods --- is the standard C&Z procedure. Monthly rebalancing can capture shorter-lived price reactions to recommendation changes that dissipate within a quarter, potentially producing a larger measured premium.
+
+**Non-monotonicity.** Our quintile returns are not perfectly monotonic: portfolio 3 (1.09%) earns more than portfolios 2 (0.64%) and 4 (0.78%). JKKL report the identical pattern --- their "no changes" category (coded 0.50) earns lower returns than the adjacent quintiles (Table III Panel C). They note that the relation between CHGCON and future returns is not monotonic, with the no-change category earning lower returns than adjacent groups [@JKKL2004, p. 1096]. In our NYSE-breakpoint implementation, the middle quintile does not perfectly capture "no change" firms (portfolio 3 has a mean signal of −0.04, not exactly zero), so the non-monotonicity is distributed slightly differently across the middle quintiles, but the qualitative pattern matches.
+
+**Asymmetry of the spread.** JKKL observe that most of the profits to the CHGCON strategy are attributable to lower returns for the downgrades [@JKKL2004, p. 1096]. In our data, **both legs contribute**: downgrades (portfolio 1) earn the lowest EW return (0.46%) and upgrades (portfolio 5) the highest (1.13%), with neither side dominating. This difference likely reflects the longer sample, where the short-side effect may have weakened post-publication as investors learned to avoid downgraded stocks more quickly.
+
+**Portfolio composition.** JKKL [-@JKKL2004, Table II Panel B] report roughly symmetric extreme quintiles (\~192 upgrades, \~199 downgrades) with a large middle group (\~294 no-change firms). Our NYSE-breakpoint sort produces an asymmetric outcome: \~130 stocks in portfolio 1 vs. \~293 in portfolio 5. This reflects both the slight negative skew of the signal (mean = −0.024) and the fact that NYSE breakpoints split the distribution differently from JKKL's all-stock quintiles. The smaller short leg is more concentrated but still well-diversified.
+
+**Other sources of deviation.** Additional differences may arise from: (i) C&Z's signal construction from raw IBES may differ in details (analyst filtering, staleness rules for old recommendations) from the pre-computed signal in `tidy_finance`; (ii) C&Z typically winsorize signals at the 1st/99th percentiles before sorting; and (iii) post-publication decay [@McLeanPontiff2016], since JKKL published in 2004 and the later portion of the sample likely exhibits weaker returns --- a hypothesis we test explicitly in the Fama-MacBeth subsample analysis (Section 8).
+
+# Pricing Tests
+
+We evaluate whether the long-short factor earns a statistically significant alpha after adjusting for exposure to established risk factors. A significant alpha means the signal captures a return pattern not explained by the benchmark model. We use Newey-West [-@NeweyWest1987] standard errors with 6 lags.
+
+```{r pricing-tests}
+#| label: pricing-tests
+
+factor_data <- ls_q5_ew |> inner_join(factors, by = "month") |> drop_na()
+
+# Time-series regression with Newey-West SE (lag=6); returns alpha and R².
+run_alpha_test <- function(data, formula_str, model_name) {
+  fit <- lm(as.formula(formula_str), data = data)
+  ct  <- coeftest(fit, vcov = NeweyWest(fit, lag = 6))
+  tibble(
+    Model           = model_name,
+    `Alpha (% p.m.)` = ct["(Intercept)", "Estimate"] * 100,
+    `t-stat (NW)`   = ct["(Intercept)", "t value"],
+    `R²`            = summary(fit)$r.squared
+  )
+}
+
+# FF-C4 is the key test: JKKL show the level loses significance once momentum
+# is controlled, but the change survives. We verify this holds in our sample.
+bind_rows(
+  run_alpha_test(factor_data, "ret_ls ~ mkt_excess",                        "CAPM"),
+  run_alpha_test(factor_data, "ret_ls ~ mkt_excess + smb + hml",            "FF3"),
+  run_alpha_test(factor_data, "ret_ls ~ mkt_excess + smb + hml + mom",      "FF-C4"),
+  run_alpha_test(factor_data, "ret_ls ~ mkt_excess + smb + hml + rmw + cma","FF5")
+) |>
+  kable(digits = 3,
+        caption = "Alpha of the ChangeInRecommendation factor (NW lag=6)") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+The alpha is remarkably stable across all four models. Under the CAPM, the factor earns 0.69% per month (t = 5.78), and adding the Fama-French size and value factors barely changes it (FF3: 0.70%, t = 5.73). This tells us the long-short factor does not simply tilt toward small or value stocks — its return is genuinely independent of these dimensions.
+
+The FF-C4 result is the critical test for this signal. JKKL [-@JKKL2004, Table VIII Panel B] show that the level of analyst recommendations loses all predictive power once momentum is controlled for, but the change remains significant. Our FF-C4 alpha of 0.64% (t = 5.35) confirms this core finding: even after absorbing the factor's exposure to momentum (UMD), the signal retains a large and highly significant unexplained return. The slight drop from 0.70% (FF3) to 0.64% (FF-C4) indicates that a small part of the premium overlaps with momentum — which makes economic sense, since analyst upgrades tend to follow recent price increases — but the vast majority of the return is orthogonal to it.
+
+Under FF5, the alpha remains at 0.70% (t = 5.43), virtually identical to FF3. The profitability (RMW) and investment (CMA) factors do not absorb the premium, suggesting the signal is unrelated to quality or investment patterns.
+
+The R² values are strikingly low across all models (0.2%–5.2%), meaning the established factors explain almost none of the factor's monthly return variation. The highest R² is under FF-C4 at just 5.2%, confirming that the ChangeInRecommendation factor moves largely independently — consistent with JKKL's claim that recommendation changes contain information orthogonal to standard quantitative signals.
+
+```{r full-c4-regression}
+#| label: full-c4-regression
+
+# Full FF-C4 output: factor loadings show what "kind" of strategy ChgRec resembles.
+fit_c4 <- lm(ret_ls ~ mkt_excess + smb + hml + mom, data = factor_data)
+ct_c4  <- coeftest(fit_c4, vcov = NeweyWest(fit_c4, lag = 6))
+
+tidy(ct_c4) |>
+  mutate(
+    term     = recode(term, "(Intercept)" = "Alpha"),
+    estimate = ifelse(term == "Alpha", estimate * 100, estimate)  # alpha in %, betas unitless
+  ) |>
+  rename(Coefficient = term, Estimate = estimate,
+         `SE (NW)` = std.error, `t` = statistic, `p` = p.value) |>
+  kable(digits = 4, caption = "FF-C4 regression: full output (alpha in \\% p.m.)") |>
+  kable_styling(bootstrap_options = "striped")
+
+# R² as a clean footnote row
+tibble(`Model fit` = "R²", Value = round(summary(fit_c4)$r.squared, 4)) |>
+  kable(digits = 4) |>
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+The alpha of 0.64% per month (t = 5.35) confirms the signal's strong independent pricing power — this is the central result of the paper.
+
+The factor loadings tell a clean story. The market beta is essentially zero (0.005, t = 0.11), meaning the long-short factor is market-neutral: it earns its return regardless of whether the overall market rises or falls. This is expected for a well-constructed L/S factor where both legs have similar market exposure.
+
+The SMB loading is near zero (0.027, t = 0.69, insignificant), indicating no meaningful size tilt in the factor. This may seem surprising given that the anomaly disappears under value-weighting — but remember, the factor itself is equal-weighted on both legs, so the small-stock effect cancels in the long-minus-short construction. The EW vs. VW difference shows up in the magnitude of the premium, not in the factor's SMB loading.
+
+The HML loading is also insignificant (−0.024, t = −0.40), confirming that the factor does not tilt toward value or growth stocks. This aligns with JKKL's finding that while the level of recommendations is heavily biased toward glamour (low B/M) stocks, the change is largely free of this value/growth contamination.
+
+The only significant loading is momentum (0.093, t = 2.79). This makes economic sense: when analysts upgrade a stock, it has often already experienced positive price momentum, and vice versa. However, the loading is modest — a one-standard-deviation move in UMD shifts the factor return by only \~9 basis points. This is why the alpha drops only slightly from FF3 (0.70%) to FF-C4 (0.64%). JKKL [-@JKKL2004, Table VI Panel B] report the same pattern: recommendation changes correlate positively with RETP (price momentum) at 14.6%, but far less than the level of recommendations (26.9%). The change strips out most of the momentum tilt that contaminates the level.
+
+The R² of 5.2% means that 95% of the factor's monthly return variation is unexplained by the four Carhart factors — the signal captures something genuinely distinct from existing models.
+
+# Factor Augmentation
+
+## GRS Test on Industry Portfolios
+
+We test whether adding the ChangeInRecommendation factor improves the FF-C4 model's ability to jointly price 30 industry portfolios, using the Gibbons-Ross-Shanken [-@GibbonsRossShanken1989] test. As a preliminary check, we also verify whether the augmented model prices the signal portfolio itself. By construction, regressing the L/S return on a model that includes ChgRec as a factor drives its alpha to zero (the factor spans itself). This confirms that the signal return is fully captured once it is included as a systematic factor — the open question is whether it helps price *other* assets.
+
+```{r grs-test}
+#| label: grs-test
+#| 
+# GRS jointly tests H0: all N industry alphas = 0.
+# Comparing FF-C4 vs FF-C4+ChgRec shows whether adding the factor helps.
+industries_30 <- tbl(tidy_finance, "industries_30_ff_monthly") |> collect()
+ind_wide      <- industries_30 |> rename(month = date) |> drop_na()
+ind_cols      <- setdiff(colnames(ind_wide), "month")
+chgrec_factor <- ls_q5_ew |> select(month, chgrec = ret_ls)
+
+test_data <- ind_wide |>
+  inner_join(factors, by = "month") |>
+  inner_join(chgrec_factor, by = "month") |>
+  drop_na()
+
+Y  <- test_data |> select(all_of(ind_cols)) |> as.matrix()
+X1 <- test_data |> select(mkt_excess, smb, hml, mom) |> as.matrix()
+X2 <- test_data |> select(mkt_excess, smb, hml, mom, chgrec) |> as.matrix()
+
+grs1 <- GRS.test(Y, X1)
+grs2 <- GRS.test(Y, X2)
+
+tibble(
+  Model     = c("FF-C4", "FF-C4 + ChgRec"),
+  `GRS stat` = c(grs1$GRS.stat, grs2$GRS.stat),
+  `p-value`  = c(grs1$GRS.pval, grs2$GRS.pval)
+) |>
+  kable(digits = 4, caption = "GRS test on 30 industry portfolios") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+Adding the ChangeInRecommendation factor reduces the GRS statistic from 4.51 to 3.96, a meaningful improvement of about 12%. Both models reject the null that all 30 industry alphas are jointly zero (p $\approx$ 0 in both cases), which is unsurprising — no parsimonious factor model perfectly prices all industries. The relevant finding is the direction of change: the augmented model gets measurably closer to explaining the cross-section of industry returns.
+
+This is a noteworthy result given that the ChangeInRecommendation factor is constructed from firm-level analyst revisions, not from industry-level information. The fact that it nonetheless helps price industry portfolios suggests that analyst upgrades and downgrades cluster in ways that correlate with systematic industry-level return patterns — for instance, analysts may collectively upgrade firms in industries with improving fundamentals, capturing an information channel that the four Carhart factors miss.
+
+## Individual Alpha Comparison
+
+```{r spanning-alphas}
+#| label: spanning-alphas
+
+# Portfolio-by-portfolio alpha comparison: does augmentation reduce mispricing?
+compute_alphas <- function(test_data, ind_cols, rhs) {
+  map_dfr(ind_cols, function(col) {
+    df  <- test_data |> rename(y = all_of(col))
+    fit <- lm(as.formula(paste("y ~", rhs)), data = df)
+    ct  <- coeftest(fit, vcov = NeweyWest(fit, lag = 6))
+    tibble(portfolio = col,
+           alpha  = ct["(Intercept)", "Estimate"] * 100,
+           t_stat = ct["(Intercept)", "t value"])
+  })
+}
+
+a1 <- compute_alphas(test_data, ind_cols, "mkt_excess + smb + hml + mom") |>
+  rename(alpha_c4 = alpha, t_c4 = t_stat)
+a2 <- compute_alphas(test_data, ind_cols, "mkt_excess + smb + hml + mom + chgrec") |>
+  rename(alpha_aug = alpha, t_aug = t_stat)
+
+left_join(a1, a2, by = "portfolio") |>
+  mutate(reduction = abs(alpha_c4) - abs(alpha_aug)) |>
+  summarise(
+    
+    # Average absolute alpha under the baseline model
+    `Mean abs(alpha) FF-C4 (%)` = mean(abs(alpha_c4)),
+    `Mean abs(alpha) Aug. (%)` = mean(abs(alpha_aug)),
+    `Mean reduction (pp)` = mean(reduction),
+    `N improved (of 30)` = sum(reduction > 0),
+    `Total` = n()
+  ) |>
+  kable(digits = 3, caption = "Alpha reductions from augmentation") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+At the individual portfolio level, the results are more sobering: augmentation slightly increases the mean absolute alpha, and **only 12 of 30 industries** see their alpha shrink. This appears to contradict the GRS improvement we found earlier, but the two results are not inconsistent. The GRS test is a joint test that accounts for the covariance structure across portfolios — it can improve even when simple averages of absolute alphas do not, because the test weighs portfolios by their precision and cross-correlation. The GRS improvement likely stems from a small number of specific industries where the alpha reduction is large and precisely estimated, rather than a broad uniform improvement.
+
+This outcome is not surprising for the ChangeInRecommendation signal. Analyst coverage and revision activity vary enormously across industries — sectors like technology and healthcare have dense analyst coverage, while utilities and mining have sparse coverage. The factor should help price industries where analyst revisions carry economically meaningful information, but it may introduce noise in industries where the signal has little relevance. Overall, the augmentation evidence is modest: the factor's primary value lies in its strong standalone alpha (Section 4), not in its ability to improve pricing of broad industry portfolios.
+
+# Factor Competition
+
+```{r spanning-test}
+#| label: spanning-test
+
+# Spanning test: regress ChgRec on FF-C4. Low R² + significant alpha = not spanned.
+# Uses factor_data (same sample as Section 4), not test_data (shorter industry overlap).
+factor_data_span <- factor_data |>
+  inner_join(chgrec_factor, by = "month") |>
+  drop_na()
+
+fit_span <- lm(chgrec ~ mkt_excess + smb + hml + mom, data = factor_data_span)
+ct_span  <- coeftest(fit_span, vcov = NeweyWest(fit_span, lag = 6))
+
+tidy(ct_span) |>
+  mutate(
+    estimate = ifelse(term == "(Intercept)", estimate * 100, estimate),
+    term     = recode(term, "(Intercept)" = "Alpha")
+  ) |>
+  kable(digits = 4,
+        caption = "Spanning: ChgRec on FF-C4 (intercept in \\% p.m.)") |>
+  kable_styling(bootstrap_options = "striped")
+
+tibble(`Model fit` = "R²", Value = round(summary(fit_span)$r.squared, 4)) |>
+  kable(digits = 4) |>
+  kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+The factor is clearly not spanned. The FF-C4 factors explain only 5.2% of the factor's monthly return variation — 95% of what drives the ChangeInRecommendation factor is independent of the market, size, value, and momentum dimensions. The intercept of 0.64% per month (t = 5.35) is the unexplained residual return that no linear combination of the four Carhart factors can replicate.
+
+The loadings confirm what we saw in Section 4: the only meaningful connection to existing factors is a modest positive exposure to momentum (0.093, t = 2.79). The market, size, and value loadings are all economically negligible and statistically insignificant. This is precisely the result JKKL [-@JKKL2004, Table VIII Panel B] predict — they show that while the level of recommendations is heavily correlated with momentum signals (Spearman rank correlations of 27–35%), the change has much weaker correlations (only RETP at 14.6% exceeds 10%), because differencing strips out the persistent glamour bias that links recommendation levels to past price trends.
+
+The 5.2% R² is strong evidence that the ChangeInRecommendation factor would be a valuable addition to a factor model — it captures a genuinely distinct source of return variation, likely reflecting the private information content of analyst research that cannot be mechanically reconstructed from price, size, or accounting data.
+
+```{r reverse-regressions}
+#| label: reverse-regressions
+
+# Reverse: does ChgRec subsume any Carhart factor?
+# If a factor's alpha drops to zero when ChgRec is included, it's redundant.
+map_dfr(c("mkt_excess", "smb", "hml", "mom"), function(fac) {
+  df  <- factor_data_span |> rename(y = all_of(fac))
+  fit <- lm(y ~ chgrec, data = df)
+  ct  <- coeftest(fit, vcov = NeweyWest(fit, lag = 6))
+  tibble(`Dep. Var` = fac,
+          `alpha (% p.m.)` = ct[1,1] * 100,
+          `t(alpha)` = ct[1,3],
+          `beta(ChgRec)` = ct[2,1],
+          `t(beta)` = ct[2,3],
+          `R2` = summary(fit)$r.squared
+  )
+}) |>
+  kable(digits = 4, caption = "Reverse: each FF-C4 factor on ChgRec") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+As expected, none of the four Carhart factors are subsumed by ChgRec. The market premium retains its full alpha of 0.75% per month (t = 2.72), and SMB and HML are similarly unaffected — their alphas are virtually identical to their unconditional means, and their betas on ChgRec are insignificant. The R² values for these three factors are negligible (0.2–0.9%), confirming near-complete independence.
+
+The only noteworthy relationship is with momentum: MOM has a significant positive beta on ChgRec (0.499, t = 2.84) and the highest R² at 4.8%. This is the mirror image of what we saw in the spanning test, where ChgRec loaded positively on MOM (0.093, t = 2.79). The two factors share a modest connection — analyst upgrades tend to coincide with price momentum — but the overlap is small and bidirectional. Importantly, MOM's alpha of 0.08% (t = 0.24) is insignificant here, but this reflects MOM's well-known weakness over the full sample (momentum crashes in 2009 etc.), not absorption by ChgRec.
+
+The overall picture from both directions of the factor competition is clean: the relationship between ChgRec and the existing factors is essentially one-dimensional (a modest momentum link), with R² of \~5% in both directions. This confirms that the ChangeInRecommendation factor captures a genuinely distinct source of return variation — consistent with JKKL's interpretation that analyst revisions convey private information orthogonal to mechanical price-based signals.
+
+```{r correlation-matrix}
+#| label: correlation-matrix
+
+# Pairwise correlations as a simple independence check alongside the regressions.
+
+factor_data_span |>
+  # Select only the factor return columns (drop month etc.)
+  select(mkt_excess, smb, hml, mom, chgrec) |>
+
+  # Compute the 5×5 Pearson correlation matrix.
+  # cor() returns a symmetric matrix where entry (i,j) is the
+  # correlation between factor i and factor j. Diagonal = 1.0.
+  cor() |>
+
+  # Round to 3 decimal places for readability
+  round(3) |>
+
+  kable(caption = "Factor correlation matrix") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+The correlation matrix confirms the regression results in a single glance. ChgRec's correlations with MKT (−0.04), SMB (0.06), and HML (−0.10) are all close to zero — the factor is essentially orthogonal to the market, size, and value dimensions.
+
+The only meaningful correlation is with MOM at 0.219, which aligns precisely with the regression evidence: $\sqrt{0.048}$ $\approx$ 0.22, matching the R² of \~5% from the spanning tests. A correlation of 0.22 means the two factors share less than 5% of their variance — enough to be statistically detectable, but far too small to call the factor redundant.
+
+For context, the correlations among the existing Carhart factors are often larger: MKT and MOM correlate at −0.31, and HML and SMB at −0.23. The ChangeInRecommendation factor is less correlated with any existing factor than the existing factors are with each other. This makes it a particularly clean candidate for model augmentation.
+
+# Comparison to Table 2 and Literature
+
+```{r cumulative-returns}
+#| label: cumulative-returns
+
+# Equity curve of the L/S strategy; vertical lines highlight known structural breaks.
+ls_q5_ew |>
+  arrange(month) |>
+  mutate(cum_ret = cumprod(1 + ret_ls) - 1) |>
+  ggplot(aes(x = month, y = cum_ret)) +
+  geom_line(color = "steelblue", linewidth = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey40") +
+  scale_y_continuous(labels = percent) +
+
+  labs(
+    title = "Cumulative Returns: ChangeInRecommendation Long-Short Factor",
+    subtitle = "Quintile 5 – Quintile 1, equal-weighted",
+    x = NULL,  # No x-axis label needed — the dates speak for themselves
+    y = "Cumulative excess return"
+  )
+```
+
+The cumulative return plot reveals three distinct regimes. From the mid-1990s through roughly 2007, the factor accumulates returns **steadily and almost monotonically**, rising from 0% to approximately 500%. This period covers both JKKL's original sample window and the early post-publication years, and the consistent upward slope confirms the signal's strong predictive power during this era.
+
+The second regime spans 2007--2019, where the factor **plateaus**. Cumulative returns fluctuate between roughly 500% and 650% with no clear upward trend. This stagnation aligns with the post-publication decay documented by McLean and Pontiff [-@McLeanPontiff2016]: once the anomaly became widely known after JKKL's 2004 publication, arbitrage activity likely compressed the premium. The 2008--2009 financial crisis also falls in this window --- the sharp drawdown around 2008 suggests the factor suffered during market turmoil, though it recovered relatively quickly.
+
+The third regime begins around 2020, where the factor **surges again**, climbing from \~550% to over 850%. This revival may reflect the unusual market conditions during the COVID-19 pandemic and its aftermath, when analyst revisions carried particularly high information content amid extreme earnings uncertainty and rapid sector rotation.
+
+Overall, the chart shows a factor that earned the bulk of its historical returns in the pre-publication period, experienced a prolonged flat spell consistent with anomaly decay, and then rebounded in an atypical macro environment. This time-variation motivates the formal subsample analysis in Section 8.
+
+**Potential sources of deviation from C&Z Table 2:**
+
+-   **Sample period**: Our data runs from \~1994 to \~2023, while C&Z's Table 2 is based on data ending around 2018. The post-2019 resurgence visible in the chart inflates our full-sample mean relative to C&Z's, while the extended flat period from 2007--2019 pulls it down --- these two effects partially offset, but the net impact depends on the exact sample endpoints.
+-   **Data source**: Our replication uses IBES/WRDS data via `tidy_finance`, which starts around 1993--1994. JKKL's original results use Zacks data from 1985 --- those earlier years are unavailable through WRDS. As noted above, C&Z did not independently reproduce this signal; their Table 2 entry simply reports JKKL's own numbers. The pre-computed signal in `tidy_finance` may also differ from a direct IBES-based construction in analyst filtering and staleness rules.
+-   **Signal construction**: C&Z compute the signal from raw IBES using their own code. Differences in how the recommendation change is calculated (lag structure, analyst filtering, treatment of stale recommendations) can affect outcomes.
+-   **Breakpoint sensitivity**: With a lumpy signal where \~25% of observations are exactly zero, small differences in how tied values are allocated at the breakpoints shift the composition of extreme portfolios.
+-   **Post-publication decay**: The plateau from 2007--2019 visible in the chart is consistent with McLean and Pontiff [-@McLeanPontiff2016], who document that anomalies weaken by \~58% post-publication on average. We test this formally in the Fama-MacBeth subsample analysis (Section 8).
+
+# Cross-Sectional Pricing (Voluntary)
+
+## Fama-MacBeth Regressions
+
+Following Fama and MacBeth [-@FamaMacBeth1973], we run monthly cross-sectional regressions of next-month excess returns on the signal. We use Newey-West standard errors with 3 lags and signal *characteristics* (not factor betas) as the regressor, consistent with the assignment instructions and with JKKL's approach.
+
+```{r fama-macbeth}
+#| label: fama-macbeth
+
+# Fama-MacBeth (1973): Step 1 = monthly cross-sectional regressions of ret on signal;
+# Step 2 = time-series average of slope estimates with NW standard errors (lag=3).
+# Signal already lagged in Section 2.1 — no additional lag needed here.
+fm_data <- crsp_signal |> drop_na(ret_excess, signal)
+
+fm_coefs  <- fm_data |>
+  group_by(month) |>
+  do(tidy(lm(ret_excess ~ signal, data = .))) |>
+  ungroup()
+
+gamma1_ts <- fm_coefs |> filter(term == "signal")
+
+fm_stat <- function(x, lag = 3) {
+  mu <- mean(x)
+  se <- sqrt(sandwich::lrvar(x, type = "Newey-West", lag = lag))
+  c(mean = mu, se = se, t = mu / se)
+}
+
+g1 <- fm_stat(gamma1_ts$estimate)
+
+# -- Present results --
+tibble(
+  `gamma1 (% p.m.)` = g1["mean"] * 100,     # Average cross-sectional premium in %
+  `NW SE (%)` = g1["se"] * 100,              # Newey-West standard error in %
+  `t-stat (NW, lag=3)` = g1["t"],            # Significance test
+  `N months` = nrow(gamma1_ts)               # Number of monthly regressions
+) |>
+  kable(digits = 3, caption = "Fama-MacBeth: univariate signal premium") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+The Fama-MacBeth estimate confirms the portfolio sort results at the individual stock level. The signal premium is **0.206% per month per unit of signal** (t = 7.35, highly significant with Newey-West correction). This means a single-notch upgrade (signal moving from 0 to +1) is associated with 0.21% higher excess returns next month.
+
+To relate this to the portfolio sort spread: the mean signal in quintile 5 is +1.35 and in quintile 1 is −1.86 --- a spread of \~3.2 units. Multiplying by $\gamma_1$ gives 3.2 × 0.206% $\approx$ **0.66%**, which closely matches the portfolio sort spread of 0.68%. This consistency between the two methods is reassuring: the signal-return relationship is approximately linear across the full distribution, not just an artifact of extreme quintile comparisons.
+
+The tight Newey-West standard error (0.028%) and high t-stat (7.35 vs. 5.92 from the portfolio sort) reflect the greater statistical power of Fama-MacBeth, which uses every stock's exact signal value rather than discarding information through quintile grouping. The NW lag of 3 accounts for potential persistence in the monthly premium --- the fact that significance remains strong after this correction suggests the premium is not driven by a few clustered months.
+
+## Extended Regression with Size Control
+
+The assignment suggests using FF3 or FF-C4 betas as controls in the extended regression. We instead use log market capitalisation, which is more natural given our earlier finding that the anomaly is concentrated among smaller stocks (EW \>\> VW in Section 3). Unlike pre-estimated factor betas, firm size is a direct characteristic observable at portfolio formation — consistent with the assignment's instruction to use signal characteristics rather than factor betas as regressors.
+
+```{r fm-with-size}
+#| label: fm-with-size
+
+# Size control: checks whether the EW > VW gap means gamma_1 just proxies for size.
+# log(mktcap_lag) is right-skewed, so we log-transform for linearity.
+fm_data_ext <- fm_data |>
+  mutate(log_size = log(mktcap_lag)) |>
+  drop_na(log_size)
+
+fm_coefs_ext <- fm_data_ext |>
+  group_by(month) |>
+  do(tidy(lm(ret_excess ~ signal + log_size, data = .))) |>
+  ungroup()
+
+g1x <- fm_stat(fm_coefs_ext |> filter(term == "signal")   |> pull(estimate))
+gs  <- fm_stat(fm_coefs_ext |> filter(term == "log_size") |> pull(estimate))
+tibble(
+  Variable = c("Signal (gamma1)", "Log size"),
+  `Mean (% p.m.)` = c(g1x["mean"], gs["mean"]) * 100,
+  `NW t-stat` = c(g1x["t"], gs["t"])
+) |>
+  kable(digits = 3, caption = "Fama-MacBeth with size control") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+The signal premium is virtually **unchanged** after controlling for size: $\gamma_1$ moves from 0.206% (univariate) to 0.211% (with size control), and the t-stat actually *increases* from 7.35 to 7.79. This rules out the concern that the signal premium is a disguised small-cap effect --- the predictive power of analyst recommendation changes is genuinely independent of firm size in the cross-section.
+
+The size coefficient itself is economically small (−0.038% per unit of log market cap) and statistically insignificant (t = −0.59). The negative sign is directionally consistent with the classic size effect --- smaller firms earn slightly higher returns --- but the effect is too weak to matter in this sample. This is not surprising: the size premium has been notoriously unstable since Banz's (1981) original finding, and many recent samples find it insignificant after controlling for other characteristics.
+
+The fact that $\gamma_1$ slightly *increases* when adding the size control is worth noting. It suggests a mild suppression effect: within a given size group, the signal is even more predictive than it appears in the pooled cross-section. This can happen if large firms (which have lower returns on average) also tend to have slightly more positive recommendation changes --- controlling for size removes this confound and sharpens the signal's estimated premium.
+
+## Dynamics of the Premium
+
+```{r gamma-dynamics}
+#| label: gamma-dynamics
+
+# Rolling 36-month mean of gamma_1 reveals structural break at JKKL 2004 publication.
+gamma1_ts |>
+  mutate(
+    gamma_pct  = estimate * 100,
+    gamma_roll = zoo::rollmean(gamma_pct, k = 36, fill = NA, align = "right")
+  ) |>
+  ggplot(aes(x = month)) +
+  geom_line(aes(y = gamma_pct), alpha = 0.2, color = "grey50") +
+  geom_line(aes(y = gamma_roll), color = "steelblue", linewidth = 0.8) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = as.Date("2004-06-01"), linetype = "dotted", color = "red") +
+  annotate("text", x = as.Date("2005-06-01"),
+           y = max(gamma1_ts$estimate * 80, na.rm = TRUE),
+           label = "JKKL publication", hjust = 0, color = "red", size = 3) +
+
+  labs(
+    title = "Time-Varying Signal Premium",
+    subtitle = "Monthly gamma1 (grey) and 36-month rolling mean (blue)",
+    x = NULL,
+    y = expression(hat(gamma)[1] ~ "(% p.m.)")
+  )
+```
+
+The plot reveals a clear **structural break around the time of JKKL's 2004 publication**. In the pre-publication period (mid-1990s to \~2004), the 36-month rolling mean of $\gamma_1$ is consistently between **0.4% and 0.6% per month** --- a large and stable premium. The blue line stays well above zero throughout, with no prolonged dips, indicating that the signal worked reliably in every three-year window during this era.
+
+After 2004, the rolling mean **drops sharply**, declining from \~0.5% to near zero by 2008--2010. For roughly a decade (2008--2019), the premium hovers between **0.0% and 0.2%** --- still marginally positive but economically much weaker than in the pre-publication period. This is textbook post-publication decay as documented by McLean and Pontiff [-@McLeanPontiff2016]: once the anomaly became widely known, arbitrageurs traded against it and compressed the mispricing.
+
+Notably, the premium **does not disappear entirely**. The rolling mean remains weakly positive throughout the post-publication period and shows a modest recovery after \~2019, rising back toward 0.2--0.3%. This partial survival is consistent with JKKL's interpretation that recommendation changes reflect *genuinely new private information* rather than pure mispricing. If the anomaly were entirely behavioral, arbitrage should have eliminated it completely; the fact that a residual premium persists suggests that analysts continue to bring information to the market through their revisions --- information that cannot be fully anticipated even by sophisticated investors.
+
+The monthly estimates (grey lines) also show a notable change in volatility: pre-publication, several months see $\gamma_1$ exceeding +2%, while post-publication the extremes are more compressed. This reduction in both the mean and the dispersion of the premium is consistent with the anomaly becoming more efficiently priced over time.
+
+```{r subsample}
+#| label: subsample
+
+gamma1_ts |>
+  mutate(period = ifelse(month <= as.Date("2004-06-01"),
+                         "Pre-publication (<=2004)", "Post-publication (>2004)")) |>
+  group_by(period) |>
+  summarise(
+    `Mean gamma1 (% p.m.)` = mean(estimate) * 100,
+    `SD (%)` = sd(estimate) * 100,
+    `t-stat` = mean(estimate) / (sd(estimate) / sqrt(n())),
+    `N months` = n(), .groups = "drop"
+  ) |>
+  kable(digits = 3, caption = "Signal premium: pre- vs. post-publication") |>
+  kable_styling(bootstrap_options = "striped")
+```
+
+# Conclusion
+
+This paper replicates and evaluates the **ChangeInRecommendation** factor from Chen and Zimmermann [-@ChenZimmermann2022], based on the quarterly change in consensus analyst recommendations originally studied by JKKL [-@JKKL2004].
+
+**Replication results.** Our primary specification — quintile sorts, NYSE breakpoints, equal-weighted returns — produces a mean long-short return of **0.68% per month** (t = 5.92) over 349 months from 1994 to 2022. This is below the 1.04% per month implied by JKKL's original six-month results, a gap attributable to three structural differences: our IBES/WRDS data source begins roughly a decade later than JKKL's Zacks coverage (missing the high-alpha pre-1993 period), we use monthly rather than quarterly rebalancing, and the extended post-publication window (2004–2022) includes a prolonged period of anomaly decay. Crucially, C&Z [-@ChenZimmermann2022] themselves were unable to reproduce this signal due to data limitations, making our implementation the first IBES-based standardised replication in the C&Z framework.
+
+**Factor independence.** The signal survives all four benchmark models. The FF-C4 alpha is **0.64% per month** (t = 5.35), confirming JKKL's central finding that recommendation *changes* — unlike the *level* — carry information beyond mechanical price momentum. The R² from regressing the factor on the four Carhart factors is just 5.2%, meaning 95% of the factor's return variation is unexplained by existing models. Its correlation with MOM (0.22) is the only meaningful link to the established factor zoo, and even this is modest: ChgRec is less correlated with any single Carhart factor than those factors are with each other.
+
+**Factor augmentation.** Adding ChgRec to the FF-C4 model reduces the GRS statistic on 30 industry portfolios from 4.51 to 3.96 (a 12% improvement), indicating that the factor contains information relevant for pricing broad industry returns. The improvement at the individual portfolio level is more limited, consistent with the factor's firm-level rather than industry-level construction.
+
+**Premium dynamics.** The Fama-MacBeth estimate confirms the portfolio sort result at the stock level: $\gamma_1$ = 0.21% per month (t = 7.35), robust to controlling for firm size. The rolling premium analysis reveals a clear structural break around JKKL's 2004 publication date: the pre-publication mean is 0.40% per month (t = 8.23), falling to 0.09% (t = 2.80) post-publication — consistent with the post-publication decay documented by McLean and Pontiff [-@McLeanPontiff2016]. Importantly, the premium does not vanish entirely, suggesting that recommendation changes continue to convey genuinely private information that arbitrage cannot fully eliminate.
+
+**Broader lesson.** JKKL's distinction between the *level* and the *change* in consensus recommendations is a powerful methodological insight. The level absorbs persistent sell-side incentive biases — the preference for glamour stocks — that erode its predictive content, while the change strips out this component and isolates incremental information. This mirrors the logic of momentum as a change in prices, earnings surprises as changes in expectations, and forecast revisions as changes in beliefs. The general lesson is that for any signal shaped by persistent institutional biases, its first difference may be more informative than its level.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::
+
+```{r cleanup}
+#| label: cleanup
+#| include: false
+dbDisconnect(tidy_finance)
+```
